@@ -1,6 +1,6 @@
 import { choseOperationBasedOnFlags } from "./functions/logCodes.js"
 
-function handleArgs() {
+export default function handleArgs() {
   const args = process.argv.slice(2)
 
   const flags = {
@@ -15,7 +15,6 @@ function handleArgs() {
     help: args.includes("--help") || args.includes("-h"),
   }
 
-
   const nameArg = args.find((a) => !a.startsWith("-"))
   const name = nameArg ?? null
 
@@ -28,5 +27,3 @@ function handleArgs() {
 
   choseOperationBasedOnFlags(params)
 }
-
-handleArgs()

@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "MFA cli client with option to import or export codes from google",
   "main": ".vite/build/main.js",
+  "type": "module",
   "scripts": {},
   "keywords": [],
   "author": {

@@ -1,5 +1,4 @@
 import * as OTPAuth from "otpauth"
-import { parseObject } from "./parseObject.js"
 
 import fs, { readdirSync } from "fs"
 import { Jimp } from "jimp"
@@ -16,23 +15,28 @@ import qrcode from "qrcode-terminal"
 
 const MFA_FOLDER_NAME = "mfa"
 const QR_CODES_FOLDER_NAME = "qrcodes"
-
+const GREEN = "\x1b[32m"
+const RESET = "\x1b[0m"
 
 const __filename = fileURLToPath(import.meta.url)
 let __dirname = dirname(__filename)
 
-// if (typeof MAIN_WINDOW_VITE_DEV_SERVER_URL === undefined) {
-//   // Script run from electron
-// } else {
-__dirname = resolve(__dirname, "../../") // Correct paths for cli usage
 
-// }
+__dirname = resolve(__dirname, "../../")
+
+function parseObject(object) {
+  return {
+    issuer: object?.issuer,
+    label: object?.name,
+    algorithm: object.algorithm,
+    digits: object.digits,
+    period: 30,
+    secret: object.secret,
+  }
+}
 
 function printTable(rows, logNumbers) {
   if (!rows.length) { return }
-
-  const GREEN = "\x1b[32m"
-  const RESET = "\x1b[0m"
 
   const baseHeaders = Object.keys(rows[0])
   const headers = logNumbers ? [
@@ -281,34 +285,39 @@ export async function choseOperationBasedOnFlags(params) {
   if(params.help) {
 
     console.log(`
-Usage:
-  node index.js [name] [options]
+First time usage:
+  Screenshot MFA QR codes (from google auth export or regular mfa qr codes) and place screenshots in "qrcodes" folder
+  Then run ${GREEN} node index.js -q ${RESET}
 
-Description:
-  By default reads MFA codes from saved JSON backups.
-  If JSON is missing or invalid, tries to read QR screenshots
-  from the "qrcodes" folder and creates a new JSON version.
+Show all:
+  ${GREEN} node index.js ${RESET}
+
+Search specific one:
+  ${GREEN} node index.js <name> ${RESET}
+
+Advanced:
+  List, show, import, export, delete or rename MFA codes!
 
 Arguments:
   name                 Search MFA entry by name or issuer.
                        If omitted, all entries are shown.
 
 Options:
-  -a, --all            Show all saved MFA codes.
+  -a, --all            Show all saved MFA codes. It's default when name is not specified
 
   -c, --copy,
-      --auto-copy      Copy single matched MFA token to clipboard.
+      --auto-copy      Copy MFA token - if found.
 
-  -q, --read-qr-codes  Force reading QR codes from "qrcodes" folder.
+  -q, --read-qr-codes  Scan qr codes from qrcodes folder
                        Adds new codes and asks before rename/delete.
 
-  -o, --overwrite      Used with -q.
-                       Treat QR folder as source of truth.
-                       Skips rename/delete prompts and rewrites JSON.
+  -o, --overwrite      Used with -q
+                       Force recreating all MFAs without checking for deletion, rename or addition
+                       (Treats qrcodes folder as single source of truth, possible data lose)
 
   -r, --rename         Rename existing MFA entry.
 
-  -d, --delete         Delete existing MFA entry.
+  -d, --delete         Delete existing MFA entry/entries.
 
   -e, --export         Export MFA codes.
                        Interactive selection.

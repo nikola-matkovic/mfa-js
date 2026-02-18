@@ -1,11 +1,3 @@
-const { spawnSync } = require("child_process")
-const { resolve } = require("path")
+import handleArgs from "./src/cli.js"
 
-const cmd =
-  "node --no-warnings " +
-  resolve(
-    __dirname,
-    "./src/cli.js " + process.argv.filter((e, i) => i > 1).join(" "),
-  )
-
-spawnSync(cmd, { stdio: "inherit", shell: true })
+handleArgs()
