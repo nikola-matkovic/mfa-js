@@ -392,10 +392,6 @@ Options:
   ${GREEN}-a, --all${RESET}
       Show all saved MFA codes. It's default when name is not specified
 
-Behavior:
-  - If [name] is provided, search is performed against saved JSON.
-  - If no flags are provided, matching MFA token is displayed.
-  - If no name is provided, defaults to --all.
 `)
 
     process.exit(0)
