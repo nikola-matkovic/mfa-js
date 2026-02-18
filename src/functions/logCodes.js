@@ -336,47 +336,60 @@ First time usage:
   Screenshot MFA QR codes (from google auth export or regular mfa qr codes) and place screenshots in "qrcodes" folder
   Then run ${GREEN} node index.js -q ${RESET}
 
+Basic functionality:
+
 Show all:
   ${GREEN} node index.js ${RESET}
 
 Search specific one:
   ${GREEN} node index.js <name> ${RESET}
 
-Advanced:
-  List, show, import, export, delete or rename MFA codes!
+Add new tokens:
+  You can simply place new screenshots to qrcodes folder and run script with -q flag, or --import
+  ${GREEN} node index.js -q ${RESET}
+  ${GREEN} node index.js --import ${RESET}
 
 Arguments:
   name                 Search MFA entry by name or issuer.
                        If omitted, all entries are shown.
 
 Options:
-  -a, --all            Show all saved MFA codes. It's default when name is not specified
 
-  -c, --copy,
-      --auto-copy      Copy MFA token - if found.
+  ${GREEN}-a, --all${RESET}
+      Show all saved MFA codes. It's default when name is not specified
 
-  -q, --read-qr-codes  Scan qr codes from qrcodes folder
-                       Adds new codes and asks before rename/delete.
+  ${GREEN}-c, --copy, --auto-copy${RESET}
+      Copy MFA token - if found.
 
-  -o, --overwrite      Used with -q
-                       Force recreating all MFAs without checking for deletion, rename or addition
-                       (Treats qrcodes folder as single source of truth, possible data lose)
+  ${GREEN}-q, --read-qr-codes${RESET}
+      Scan qr codes from qrcodes folder
+      Adds new codes and asks before rename/delete.
 
-  -r, --rename         Rename existing MFA entry.
+  ${GREEN}-o, --overwrite${RESET}
+      Used with -q
+      Force recreating all MFAs without checking for deletion, rename or addition
+      (Treats qrcodes folder as single source of truth, possible data lose)
 
-  -d, --delete         Delete existing MFA entry/entries.
+  ${GREEN}-r, --rename${RESET}
+      Rename existing MFA entry.
 
-  -e, --export         Export MFA codes.
-                       Interactive selection.
-                       Outputs QR in terminal or otpauth:// URL.
+  ${GREEN}-d, --delete${RESET}
+      Delete existing MFA entry/entries.
 
-  -i, --import         Import new MFA.
-                       Supports:
-                         - otpauth:// URL
-                         - Google migration URL
-                         - Manual secret entry
+  ${GREEN}-e, --export${RESET}
+      Export MFA codes.
+      Interactive selection.
+      Outputs QR in terminal or otpauth:// URL.
 
-  -h, --help           Show this help message.
+  ${GREEN}-i, --import${RESET}
+      Import new MFA.
+      Supports:
+        - otpauth:// URL
+        - Google migration URL
+        - Manual secret entry
+
+  ${GREEN}-h, --help${RESET}
+      Show this help message.
 
 Behavior:
   - If [name] is provided, search is performed against saved JSON.
