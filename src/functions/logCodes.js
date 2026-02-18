@@ -185,10 +185,12 @@ async function handleExport(){
 Which method you prefer for exporting? (Enter one of numbers bellow)
 1) QR codes (more secure)
 2) Show me otpauth:// url and secret directly (Not secure if someone watch your computer)
+3) json (Use for exporting to another device, fastest method to import/export using this script.)
 `,
     [
       "1",
       "2",
+      "3",
     ],
   )
 
@@ -199,6 +201,51 @@ Which method you prefer for exporting? (Enter one of numbers bellow)
   else if(method === "2"){
     console.log("Bellow are  otpauth:// urls. \n")
   }
+
+  else if(method === "3"){
+    const json = JSON.stringify(toExportArray, null, 2)
+
+    const ask = await question(
+      `
+Do you want to copy JSON to clipboard (more secure)?
+1) Copy
+2) Show to console
+3) Both
+`,
+      [
+        "1",
+        "2",
+        "3",
+      ],
+    )
+
+    if(ask === "2" || ask === "3"){
+      console.log(json)
+    }
+
+    if(ask === "1" || ask === "3"){
+      // TODO - Remove deps by doing check manually without libs On wayland process won't exit for about 5 minutes.
+      // clipboardy can't be used. Running spawn manually. Refactor to run spawn for all platforms
+      const isRunningOnWayland = isWayland()
+
+      if(isRunningOnWayland){
+        spawn("wl-copy", [
+          json,
+        ], {detached: true})
+      }
+      else{
+        await clipboard.write(json)
+      }
+
+      console.log("Copied to clipboard")
+    }
+
+    console.log("Bye!")
+
+    process.exit(0)
+
+  }
+
 
   toExportArray.forEach(mfa => {
     const url = toOtpAuthUrl(mfa)
