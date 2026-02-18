@@ -326,17 +326,12 @@ Tip: You can also always add screenshots of your qrcodes in \"qrcodes\" folder (
 
 export async function choseOperationBasedOnFlags(params) {
 
-
-
-
   if(params.help) {
 
     console.log(`
 First time usage:
   Screenshot MFA QR codes (from google auth export or regular mfa qr codes) and place screenshots in "qrcodes" folder
   Then run ${GREEN} node index.js -q ${RESET}
-
-Basic functionality:
 
 Show all:
   ${GREEN} node index.js ${RESET}
@@ -350,11 +345,9 @@ Add new tokens:
   ${GREEN} node index.js --import ${RESET}
 
 Arguments:
-  name                 Search MFA entry by name or issuer.
-                       If omitted, all entries are shown.
+  name      Search MFA entry by name or issuer. If omitted, all entries are shown.
 
 Options:
-
 
   ${GREEN}-c, --copy, --auto-copy${RESET}
       Copy MFA token - if found.
@@ -375,24 +368,17 @@ Options:
       Delete existing MFA entry/entries.
 
   ${GREEN}-e, --export${RESET}
-      Export MFA codes.
-      Interactive selection.
-      Outputs QR in terminal or otpauth:// URL.
+      Export MFA codes (Supports showing qr code in terminal, otpauth:// URL or json)
 
   ${GREEN}-i, --import${RESET}
       Import new MFA.
-      Supports:
-        - otpauth:// URL
-        - Google migration URL
-        - Manual secret entry
+      Supports: otpauth:// URL, Google migration URL or Manual secret entry
 
   ${GREEN}-h, --help${RESET}
       Show this help message.
 
   ${GREEN}-a, --all${RESET}
-      Show all saved MFA codes. It's default when name is not specified
-
-`)
+      Show all saved MFA codes. It's default when name is not specified`)
 
     process.exit(0)
 
