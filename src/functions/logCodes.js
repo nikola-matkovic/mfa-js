@@ -355,8 +355,6 @@ Arguments:
 
 Options:
 
-  ${GREEN}-a, --all${RESET}
-      Show all saved MFA codes. It's default when name is not specified
 
   ${GREEN}-c, --copy, --auto-copy${RESET}
       Copy MFA token - if found.
@@ -390,6 +388,9 @@ Options:
 
   ${GREEN}-h, --help${RESET}
       Show this help message.
+
+  ${GREEN}-a, --all${RESET}
+      Show all saved MFA codes. It's default when name is not specified
 
 Behavior:
   - If [name] is provided, search is performed against saved JSON.
