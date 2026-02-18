@@ -1,0 +1,24 @@
+1. If there is json file read last version (sort by date in yyyy-mm-dd-hh-mm-ss format) - read from json file by default
+2. If there is no json file - read from images but crate json file
+3. if user runs --read-qr-codes without any other flag only new qr codes should be added  to existing json(merge existing and new one){
+    a) if json exist  create new version -
+    b) if not - just create first version
+}
+4. If there is --overwrite flag + --read-qr-codes flag do the same as 3 but ask for each overwrite: rename or delete only - add is allowed by default
+5. If there is --rename flag and qr code is found - create new version with renamed mfa
+6. If there is --delete flag and qr code is found - crate new version without deleted mfa
+7. If there is --import flag show how to enter qr code or ask to paste otp string
+8. If there is --export flag show selecting codes screen - user should have all preselected, on enter it should be exported to otp
+
+
+all flags listed:
+
+
+--auto-copy -c --copy
+--read-qr-codes -q
+--overwrite    -o
+--rename       -r
+--delete       -d
+--import       -i
+--export       -e
+

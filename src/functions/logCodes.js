@@ -1,0 +1,1316 @@
+import * as OTPAuth from "otpauth"
+import { parseObject } from "./parseObject.js"
+
+import fs, { readdirSync } from "fs"
+import { Jimp } from "jimp"
+import jsQR from "jsqr"
+import parser from "otpauth-migration-parser"
+
+import readline from "node:readline"
+import { dirname, join, resolve } from "path"
+import { fileURLToPath } from "url"
+import clipboard from "clipboardy"
+import isWayland from "is-wayland"
+import { spawn } from "node:child_process"
+import qrcode from "qrcode-terminal"
+
+const MFA_FOLDER_NAME = "mfa"
+const QR_CODES_FOLDER_NAME = "qrcodes"
+
+
+const __filename = fileURLToPath(import.meta.url)
+let __dirname = dirname(__filename)
+
+// if (typeof MAIN_WINDOW_VITE_DEV_SERVER_URL === undefined) {
+//   // Script run from electron
+// } else {
+__dirname = resolve(__dirname, "../../") // Correct paths for cli usage
+
+// }
+
+function printTable(rows, logNumbers) {
+  if (!rows.length) { return }
+
+  const GREEN = "\x1b[32m"
+  const RESET = "\x1b[0m"
+
+  const baseHeaders = Object.keys(rows[0])
+  const headers = logNumbers ? [
+    "#",
+    ...baseHeaders,
+  ] : baseHeaders
+
+  const preparedRows = logNumbers
+    ? rows.map((row, i) => ({
+      "#": String(i + 1),
+      ...row,
+    }))
+    : rows
+
+  const widths = headers.map(h =>
+    Math.max(
+      h.length,
+      ...preparedRows.map(r => String(r[h] ?? "").length),
+    ))
+
+  const line = (left, mid, right) =>
+    GREEN +
+    left +
+    widths.map(w => "─".repeat(w + 2)).join(mid) +
+    right +
+    RESET
+
+  const formatRow = (row) =>
+    GREEN + "│" + RESET +
+    headers
+      .map((h, i) => {
+        const value = String(row[h] ?? "")
+        const padded = " " + value.padEnd(widths[i]) + " "
+
+        if (i === headers.length - 1) {
+          return GREEN + padded + RESET
+        }
+
+        return padded
+      })
+      .join(GREEN + "│" + RESET) +
+    GREEN + "│" + RESET
+
+  console.log(line("┌", "┬", "┐"))
+  console.log(formatRow(Object.fromEntries(headers.map(h => [
+    h,
+    h,
+  ]))))
+  console.log(line("├", "┼", "┤"))
+
+  for (const row of preparedRows) {
+    console.log(formatRow(row))
+  }
+
+  console.log(line("└", "┴", "┘"))
+}
+
+
+
+function question(q, allowedAnswers = []) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+
+  return new Promise(resolve => {
+
+    const ask = (q) => {
+
+      rl.question(q, ans => {
+
+        if(allowedAnswers.length){
+          const valid = allowedAnswers.find(a => a.toLowerCase() === ans.toLowerCase())
+
+          if (valid) {
+            rl.close()
+            resolve(ans)
+          } else {
+            console.log("Wrong answer, please try again! Allowed answers are:", allowedAnswers)
+            ask("")
+          }
+        }
+
+        else{
+          rl.close()
+          resolve(ans)
+        }
+      })
+    }
+
+    ask(q)
+  })
+}
+
+function toOtpAuthUrl(mfa) {
+  const label = encodeURIComponent(`${mfa.issuer}:${mfa.name}`)
+  const issuer = encodeURIComponent(mfa.issuer)
+
+  return `otpauth://${mfa.type}/${label}?secret=${mfa.secret}&issuer=${issuer}&algorithm=${mfa.algorithm}&digits=${mfa.digits}&period=30`
+}
+
+
+async function handleExport(){
+  const codes = await getCodesFromJsonFile(true)
+
+  if(codes.codes.length === 0){
+    console.log("You do not have any MFA imported, so there is nothing to export eater!")
+    process.exit(1)
+  }
+
+  console.log("Tip: If you just want to move existing codes to another device for using with this script just copy mfa folder to another device and all you codes will be there.")
+
+  logMfaCode(null, codes.codes, false, true, true)
+
+
+  const answer = await question("Please enter which codes you want to export (single number or numbers separated by comma \",\", or type \"all\" to export all \n")
+
+  let toExportArray = []
+
+  if(answer === "all"){
+    toExportArray = [
+      ...codes.codes,
+    ]
+  }
+  else{
+    const indexes = answer.split(",")
+
+    indexes.forEach(index => {
+
+      const numeric = Number(index)
+
+
+      if(Number.isInteger(numeric) && numeric <= codes.codes.length && numeric > 0){
+        toExportArray.push(codes.codes[numeric - 1])
+      }
+      else {
+        console.log("skipping ", index)
+      }
+    })
+
+  }
+
+
+  const method = await question(
+    `
+Which method you prefer for exporting? (Enter one of numbers bellow)
+1) QR codes (more secure)
+2) Show me otpauth:// url and secret directly (Not secure if someone watch your computer)
+`,
+    [
+      "1",
+      "2",
+    ],
+  )
+
+
+  if(method  === "1"){
+    console.log("Bellow are qr codes for export.")
+  }
+  else if(method === "2"){
+    console.log("Bellow are  otpauth:// urls. \n")
+  }
+
+  toExportArray.forEach(mfa => {
+    const url = toOtpAuthUrl(mfa)
+
+    if(method === "1"){
+      console.log(`${mfa?.issuer} - ${mfa.name}:`)
+      qrcode.generate(url, {small: true})
+      console.log("\n")
+    }
+
+    else if(method === "2"){
+      console.log(`${mfa?.issuer ? mfa.issuer + " - " : ""}${mfa.name} (In case of manual import - secret is ${mfa.secret}) `)
+      console.log(url + "\n")
+    }
+  })
+
+}
+
+async function handleImport(){
+  const method = await question(
+    `
+Please select import method:
+1) Paste  otpauth:// or google migration url
+2) Enter name, issuer and secret key manually
+Tip: You can also always add screenshots of your qrcodes in \"qrcodes\" folder (Exported from google or regular mfa QR codes)
+`,
+    [
+      "1",
+      "2",
+    ],
+  )
+
+  if(method === "1"){
+
+    const url = await question("Please, paste MFA url: ")
+
+    const parsed = await parseCode(url)
+    const current = await getCodesFromJsonFile(true)
+
+    const final = [
+      ...current.codes,
+      parsed,
+    ]
+
+    await writeJSONVersion(final)
+
+    console.log("Saved new MFA code!")
+
+  }
+
+  if (method === "2") {
+    const issuer = await question("Issuer:")
+    const name = await question("Name (email or label):")
+    const secret = await question("Secret (Base32):")
+
+    const parsed = {
+      issuer,
+      name,
+      secret,
+      algorithm: "SHA1",
+      digits: 6,
+      type: "totp",
+    }
+
+    const current = await getCodesFromJsonFile(true)
+
+    const final = [
+      ...current.codes,
+      parsed,
+    ]
+
+    await writeJSONVersion(final)
+
+    console.log("Saved new MFA code!")
+  }
+
+}
+
+export async function choseOperationBasedOnFlags(params) {
+
+
+
+
+  if(params.help) {
+
+    console.log(`
+Usage:
+  node index.js [name] [options]
+
+Description:
+  By default reads MFA codes from saved JSON backups.
+  If JSON is missing or invalid, tries to read QR screenshots
+  from the "qrcodes" folder and creates a new JSON version.
+
+Arguments:
+  name                 Search MFA entry by name or issuer.
+                       If omitted, all entries are shown.
+
+Options:
+  -a, --all            Show all saved MFA codes.
+
+  -c, --copy,
+      --auto-copy      Copy single matched MFA token to clipboard.
+
+  -q, --read-qr-codes  Force reading QR codes from "qrcodes" folder.
+                       Adds new codes and asks before rename/delete.
+
+  -o, --overwrite      Used with -q.
+                       Treat QR folder as source of truth.
+                       Skips rename/delete prompts and rewrites JSON.
+
+  -r, --rename         Rename existing MFA entry.
+
+  -d, --delete         Delete existing MFA entry.
+
+  -e, --export         Export MFA codes.
+                       Interactive selection.
+                       Outputs QR in terminal or otpauth:// URL.
+
+  -i, --import         Import new MFA.
+                       Supports:
+                         - otpauth:// URL
+                         - Google migration URL
+                         - Manual secret entry
+
+  -h, --help           Show this help message.
+
+Behavior:
+  - If [name] is provided, search is performed against saved JSON.
+  - If no flags are provided, matching MFA token is displayed.
+  - If no name is provided, defaults to --all.
+`)
+
+    process.exit(0)
+
+
+  }
+
+  const specialFlags = [
+    params.delete,
+    params.rename,
+    params.import,
+    params.export,
+  ]
+    .filter(Boolean)
+
+  if (specialFlags.length > 1) {
+    throw new Error("Only one operation flag is allowed")
+  }
+
+  // Delete and rename operations should have
+  // mfa name, but import do not require name.
+  if (params.delete) {
+    return handleDelete(params.name)
+  }
+
+  if (params.rename) {
+    return handleRename(params.name)
+  }
+
+  if (params.export) {
+    return handleExport()
+  }
+
+  if (params.import) {
+    return handleImport()
+  }
+
+  if (params.readQrCodes) {
+    // Should handle "copy and overwrite + log it to console"
+    return handleQrCodeRead(params.overwrite)
+  }
+
+  // Default case - JSON read -
+  // If no json then first json will be created (no need for overwrite)
+  await handleDefaultJsonRead(params.name, params.copy, params.showAll, false)
+}
+
+async function handleQrCodeRead(overwrite){
+  const codes = await getCodesFromImages()
+
+  if(codes.codes.length === 0){
+    console.log("No MFA found. PLease import some.")
+    process.exit(1)
+  }
+  else{
+    await createNewJsonVersion(codes.codes, overwrite)
+    console.log("Finished! Full mfa list:")
+    await handleDefaultJsonRead(null, false, true, true)
+
+    process.exit(0)
+  }
+}
+
+function diffMfa(oldMap, newMap) {
+  const added = []
+  const removed = []
+  const changed = []
+  const same = []
+
+  for (const [
+    secret,
+    newObj,
+  ] of newMap) {
+
+    if (!oldMap.has(secret)) {
+      added.push(newObj)
+    }
+    else {
+      const oldObj = oldMap.get(secret)
+
+      if (
+        oldObj.name !== newObj.name ||
+        oldObj.issuer !== newObj.issuer
+      ) {
+        changed.push({
+          secret,
+          old: oldObj,
+          new: newObj,
+        })
+      }
+      else{
+        same.push(oldObj)
+      }
+    }
+  }
+
+
+  for (const [
+    secret,
+    oldObj,
+  ] of oldMap) {
+    if (!newMap.has(secret)) {
+      removed.push(oldObj)
+    }
+  }
+
+  return { added, removed, changed, same }
+}
+
+
+async function handleDefaultJsonRead(name, copy = false, all = false, doNotTryQrs = false) {
+  const codes = await getCodesFromJsonFile(doNotTryQrs)
+
+  if(codes.codes.length === 0){
+    console.log("No MFA found. PLease import some.")
+  }
+  else{
+    await logMfaCode(name, codes.codes, copy, all)
+    process.exit(0)
+  }
+}
+
+async function createNewJsonVersion(codes, ignoreOldVersions = false) {
+  if (ignoreOldVersions) {
+
+    if (codes.length > 0) {
+      await writeJSONVersion(codes)
+    }
+    else{
+      console.log("Nothing to write, no codes found")
+    }
+  }
+
+  else{
+    const dir = join(__dirname, MFA_FOLDER_NAME)
+    fs.mkdirSync(dir, {recursive: true})
+
+    let files
+
+    try {
+      files = readdirSync(dir)
+        .filter((file) => file.endsWith(".json"))
+        .sort((a, b) => b.localeCompare(a))
+
+      // First time running, safe to just create new json version
+      if(files.length === 0){
+        await writeJSONVersion(codes)
+      }
+
+      else{
+        try{
+          const fileContent = fs.readFileSync(join(dir, files[0]))
+          const oldMFAArray = JSON.parse(fileContent)
+
+
+          const oldMap = new Map(oldMFAArray.map(obj => [
+            obj.secret,
+            obj,
+          ]))
+          const newMap = new Map(codes.map(obj => [
+            obj.secret,
+            obj,
+          ]))
+
+          const {added, removed, changed, same} = diffMfa(oldMap, newMap)
+
+          let finalArray = [
+            ...same,
+          ]
+
+          if(added.length){
+            console.log("Added new MFA tokens:")
+            logMfaCode(null, added, false, true)
+
+
+            finalArray = [
+              ...finalArray,
+              ...added,
+            ]
+
+          }
+
+          if(changed.length){
+            console.log("Following MFA tokens are changed:")
+            logMfaCode(null, changed.old, false, true)
+            console.log("with")
+            logMfaCode(null, changed.new, false, true)
+
+            const answer = await question(
+              `
+Do you want to update existing with new ones? Answer with numbers bellow:
+1) Yes
+2) No
+3) Ask me for each
+`,
+              [
+                "1",
+                "2",
+                "3",
+              ],
+            )
+
+            if(answer === "1") {
+              finalArray = [
+                ...finalArray,
+                ...changed.map(obj => obj.new),
+              ]
+            }
+
+            else if(answer === "2"){
+              finalArray = [
+                ...finalArray,
+                ...changed.map(obj => obj.old),
+              ]
+            }
+
+            else if(answer === "3"){
+              const answers = []
+
+              for (const obj of changed) {
+                const answer = await question(`Do you want to rename:      ${obj.old.issuer} - ${obj.old.name}      with      ${obj.new.issuer} -  ${obj.new.name} \n [Y/Yes, N/No ]     `, [
+                  "Y",
+                  "Yes",
+                  "N",
+                  "No",
+                ])
+
+
+                if([
+                  "y",
+                  "yes",
+                ].includes(answer.toLowerCase())){
+                  answers.push(obj.new)
+                }
+
+
+                else if([
+                  "n",
+                  "no",
+                ].includes(answer.toLowerCase())){
+                  answers.push(obj.old)
+                }
+
+                else{
+                  console.log("unknown error, answer must be [Y]es or [N]o!")
+                  process.exit(1)
+                }
+              }
+
+              finalArray = [
+                ...finalArray,
+                ...answers,
+              ]
+              console.log("Updated MFA codes:")
+              logMfaCode(null, answers, false, true)
+
+            }
+
+            else {
+              console.log("unknown error, answer must be 1 2 or 3!")
+              process.exit(1)
+            }
+
+          }
+
+          if(removed.length){
+            console.log("The following MFA codes are missing in new QR code scan.")
+            logMfaCode(null, removed, false, true)
+            const answer = await question(
+              `
+Do you want to keep it?
+1) Keep all
+2) Delete all
+3) Ask me for each
+`,
+              [
+                "1",
+                "2",
+                "3",
+              ],
+            )
+
+
+            if(answer === "1"){
+              finalArray = [
+                ...finalArray,
+                ...removed,
+              ]
+            }
+
+            if(answer === "2"){
+              console.log("Following MFAs WILL BE22:32 DELETED")
+
+              logMfaCode(null, removed, false, true)
+
+
+              const finalAnswer = await question("Are you sure? Type \"save changes\" to continue, any other answer will abort action and keep all MFAs \n")
+
+              if(finalAnswer === "save changes"){
+                console.log("Changes are saved!")
+              }
+
+              else{
+                console.log("Removed MFAs will be kept")
+
+                finalArray = [
+                  ...finalArray,
+                  ...removed,
+                ]
+              }
+
+            }
+
+            if(answer === "3"){
+              const kept = []
+              const deleted = []
+
+              for (const obj of removed) {
+                const answer = await question(`Do you want to keep: ${obj.issuer} - ${obj.name}? [Y/Yes, N/No]    `, [
+                  "Y",
+                  "Yes",
+                  "N",
+                  "No",
+                ])
+
+                if([
+                  "y",
+                  "yes",
+                ].includes(answer.toLowerCase())){
+                  kept.push(obj)
+                }
+
+                else{
+                  deleted.push(obj)
+                }
+
+              }
+
+              console.log("Following MFAs WILL BE DELETED")
+
+              logMfaCode(null, deleted, false, true)
+
+
+              console.log("Following MFAs WILL BE kept")
+
+              logMfaCode(null, kept, false, true)
+
+
+              const finalAnswer = await question("Are you sure? Type \"save changes\" to continue, any other answer will abort action and keep all MFAs \n")
+
+              if(finalAnswer === "save changes"){
+
+                console.log("Changes are saved!")
+
+                finalArray = [
+                  ...finalArray,
+                  ...kept,
+                ]
+              }
+              else{
+                console.log("Removed MFAs will be kept")
+
+                finalArray = [
+                  ...finalArray,
+                  ...removed,
+                ]
+              }
+            }
+
+          }
+
+          writeJSONVersion(finalArray)
+
+        }
+        catch(error){
+          console.log("Error reading old MFA version, aborting", error)
+          process.exit(1)
+        }
+      }
+    }
+    catch(e){
+      console.log("error reading old version", e)
+    }
+  }
+}
+
+async function getCodesFromJsonFile(skipQrBackup) {
+  // Handle cases when there is no mfa folder, or folder is empty
+  const dir = join(__dirname, MFA_FOLDER_NAME)
+
+  let codesResponse = {
+    codes: [],
+    status: "",
+    error: "",
+  }
+
+  if (!fs.existsSync(dir)) {
+    console.log("Folder does not exist:", dir, "trying to repair it....")
+
+    try {
+      fs.mkdirSync(dir)
+      console.log("Folder", dir, " Created!")
+
+
+      if(skipQrBackup){
+        codesResponse = {
+          codes: [],
+          status: "Skipped backup plan",
+          error: null,
+        }
+
+        return codesResponse
+      }
+
+      console.log("Trying to get codes from screenshots....")
+
+      // Skip reading old JSON version and just create new one
+      codesResponse = await getCodesFromImages()
+      createNewJsonVersion(codesResponse.codes, true)
+
+      return codesResponse
+
+    } catch (e) {
+      console.log("Error creating folder:", dir, " Please try crating it manually!", e)
+      process.exit(1)
+    }
+  }
+
+
+  // After this line we are sure there is MFAS folder
+  let files = []
+
+  try{
+    files = readdirSync(dir)
+      .filter((f) => f.endsWith(".json"))
+      .sort((a, b) => b.localeCompare(a))
+
+  }
+  catch(e){
+    console.error("Error listing files in", dir, "Please check permissions manually", e)
+    process.exit(1)
+  }
+
+  if (files.length === 0) {
+    console.log("No MFA found!")
+
+    if(skipQrBackup){
+      codesResponse = {
+        codes: [],
+        status: "Skipped backup plan",
+        error: null,
+      }
+
+      return codesResponse
+    }
+
+    console.log("Trying to get codes from screenshots....")
+
+    codesResponse = await getCodesFromImages()
+    await createNewJsonVersion(codesResponse.codes, true)
+
+    return codesResponse
+  }
+
+
+  // After this we can be sure there is at least one json file
+  const filePath = join(dir, files[0])
+  let codes
+
+  try{
+    codes = fs.readFileSync(filePath, "utf8")
+  }
+  catch(e){
+    console.error("Error reading file", filePath, "e", " please check permissions")
+  }
+
+  try {
+    codes = JSON.parse(codes)
+
+    return {
+      codes,
+      error: null,
+      status: true,
+    }
+  } catch (e) {
+    console.error("Can't parse json in ", filePath, " Please try to fix  manually and try again.", e)
+
+    return {
+      codes: [],
+      error: "wrong-json",
+      status: false,
+    }
+  }
+}
+
+async function readQRCode(imagePath) {
+  let image
+
+  try {
+    image = await Jimp.read(imagePath)
+  } catch (e) {
+    console.error("Can't read image ", imagePath, " wrong file format of permissions")
+
+    return ""
+  }
+
+  const imageData = {
+    data: new Uint8ClampedArray(image.bitmap.data),
+    width: image.bitmap.width,
+    height: image.bitmap.height,
+  }
+
+  const decodedQR = jsQR(imageData.data, imageData.width, imageData.height)
+
+  if (decodedQR) {
+    return decodedQR.data
+  } else {
+    console.error("Image ", imagePath, "has no QR code")
+
+    return ""
+  }
+}
+
+
+async function writeJSONVersion(newCodes) {
+  const fileName = new Date().toISOString().replaceAll(":", "-") + ".json"
+  const folderPath = join(__dirname, MFA_FOLDER_NAME)
+  const filePath = join(folderPath, fileName)
+  const jsonString = JSON.stringify(newCodes, null, 2)
+
+  try {
+    fs.mkdirSync(folderPath, { recursive: true })
+    fs.writeFileSync(filePath, jsonString)
+  }
+  catch (error) {
+    console.error(
+      "Error writing",
+      filePath,
+      " cache file! Something went wrong,  please report this!",
+      error,
+    )
+  }
+}
+
+
+async function parseCode(code) {
+  if (code.startsWith("otpauth://")) {
+    const parsed = OTPAuth.URI.parse(code)
+
+    return {
+      issuer: parsed?.issuer,
+      name: parsed?.label,
+      secret: parsed?.secret.base32,
+      algorithm: parsed?.algorithm,
+      digits: parsed.digits,
+      type: "totp",
+    }
+  }
+
+  return await parser(code)
+}
+
+
+async function getCodesFromImages() {
+  const dir = join(__dirname, QR_CODES_FOLDER_NAME)
+
+  if (!fs.existsSync(dir)) {
+    console.log("Folder does not exist:", dir, "trying to repair it....")
+
+    try {
+      fs.mkdirSync(dir)
+
+      console.log("Folder qrcodes is created! Place MFA screenshots there, or re-run script with --import")
+
+      // If there is no folder we can know for sure there is no images eater!
+      return {
+        codes: [],
+        status: false,
+        error: "no-folder",
+      }
+    } catch (e) {
+      console.log("Error creating folder:", dir, " Please try crating it manually!", e)
+
+      // App wont work without qrcodes folder
+      process.exit(1)
+    }
+  }
+
+  let imageFiles
+
+  try {
+    imageFiles = fs.readdirSync(dir)
+  } catch (e) {
+    console.log("Error listing Images in folder", dir, ", please check permissions")
+
+    // App wont work if folder is unreadable
+    process.exit(1)
+  }
+
+  imageFiles = imageFiles.map((imageFile) => join(__dirname, QR_CODES_FOLDER_NAME, imageFile))
+
+  imageFiles = imageFiles.filter((imageFile) => !imageFile.endsWith(".gitignore"))
+
+  if (!imageFiles.length) {
+    console.error("No images found, please add screenshots of qr codes in qrcodes folder, or re-run script with --import flag")
+
+    return {
+      codes: [],
+      status: false,
+      error: "no-images",
+    }
+  }
+
+  const codes = []
+
+  for (const imagePath of imageFiles) {
+    const code = await readQRCode(imagePath)
+
+    if (!code) {continue}
+
+    codes.push(code)
+  }
+
+  if (codes.length === 0) {
+    console.error("No qr codes found in any image!")
+
+    return {
+      codes: [],
+      status: false,
+      error: "no-qrcodes",
+    }
+  }
+
+  let parsedCodes = []
+
+  for (const code of codes) {
+    try {
+      const parsed = await parseCode(code)
+      parsedCodes.push(parsed)
+    } catch (e) {
+      console.log(e)
+      console.error(
+        "Error parsing ",
+        code,
+        ". This code will be Skipped! Please delete wrong qr code",
+      )
+    }
+  }
+
+  if (!parsedCodes.length) {
+    console.error("All qr codes were invalid!")
+
+    return {
+      codes: [],
+      status: false,
+      error: "all-invalid",
+    }
+  }
+
+  parsedCodes = parsedCodes.flat()
+
+  return {
+    codes: parsedCodes,
+    status: true,
+    error: null,
+  }
+}
+
+async function handleDelete(mfaName) {
+
+  if(!mfaName){
+    console.log("Please enter name of MFA you want to delete. To see available codes run script with --all flag")
+    process.exit(1)
+  }
+
+  const codes = await getCodesFromJsonFile(true)
+
+  if(codes.codes.length === 0){
+    console.log("You do not have any MFA imported, so there is nothing to delete eater!")
+    process.exit(1)
+  }
+
+  let newCodes = [
+    ...codes.codes,
+  ]
+
+  const found = search(codes.codes, mfaName, false)
+
+  if(found.length === 0){
+    console.log("Mfa is not found, so it's not deleted. Run script with --all to see all MFAs you saved")
+    process.exit(0)
+  }
+
+  if(found.length === 1){
+    const ans = await question(`Are you sure you want to delete ${found[0]?.issuer} - ${found[0].name}? [Y/Yes, N/No]  \n`, [
+      "Y",
+      "Yes",
+      "N",
+      "No",
+    ])
+
+    if([
+      "y",
+      "yes",
+    ].includes(ans.toLowerCase())){
+      newCodes = newCodes.filter(newCode => newCode.secret !== found[0].secret  )
+    }
+
+  }
+
+  else if(found.length > 1){
+    console.log("Multiple MFAs found for deletion:")
+
+    logMfaCode(null, found, false, true)
+
+    const answer = await question(
+      `
+Please select one of options bellow (Insert number and press enter):
+1) Delete all found MFA codes
+2) Skip all (Do nothing)
+3) Ask me for each
+`,
+      [
+        "1",
+        "2",
+        "3",
+      ],
+    )
+
+    if(answer === "1") {
+      newCodes = newCodes.filter(newCode => !found.some(foundCode => foundCode.secret === newCode.secret))
+    }
+
+    else if(answer === "2"){
+      console.log("Skipping deletion, bye")
+      process.exit(0)
+    }
+
+    else if(answer === "3"){
+      for(const code of found){
+
+        const ans = await question(`Are you sure you want to delete ${code?.issuer} - ${code.name}? [Y/Yes, N/No]  \n`, [
+          "Y",
+          "Yes",
+          "N",
+          "No",
+        ])
+
+        if([
+          "y",
+          "yes",
+        ].includes(ans.toLowerCase())){
+          newCodes = newCodes.filter(newCode => newCode.secret !== code.secret)
+        }
+      }
+    }
+
+    else {
+      console.error("Unknown error!")
+      process.exit(1)
+    }
+  }
+
+  else {
+    console.error("Unknown error!")
+    process.exit(1)
+  }
+
+  await writeJSONVersion(newCodes)
+
+  console.log("Deleted!")
+}
+
+function search(codes, mfaName, onlyFirstResult = true){
+
+
+  if(onlyFirstResult){
+    let searchedCode = codes?.find((code) =>
+      code.name.toLowerCase().includes(mfaName.toLowerCase()))
+
+    if(!searchedCode){
+      searchedCode = codes?.find((code) =>
+        code?.issuer.toLowerCase().includes(mfaName.toLowerCase()))
+    }
+
+    return searchedCode
+  }
+
+  return codes.filter( code => {
+    return code.name.toLowerCase().includes(mfaName.toLowerCase()) ||
+      code?.issuer?.toLowerCase()?.includes(mfaName.toLowerCase())
+
+  })
+
+}
+
+
+async function handleRename(mfaName) {
+
+  if(!mfaName){
+    console.log("Please enter name of MFA you want to Rename. To see available codes run script with --all flag")
+    process.exit(1)
+  }
+
+  const codes = await getCodesFromJsonFile(true)
+
+  if(codes.codes.length === 0){
+    console.log("You do not have any MFA imported, so there is nothing to rename eater!")
+    process.exit(1)
+  }
+
+  const found = search(codes.codes, mfaName, false)
+
+  if(found.length === 0){
+    console.log("Mfa is not found, nothing to rename. Run script with --all to see all MFAs you saved")
+    process.exit(0)
+  }
+
+  if(found.length > 0){
+
+
+    let renamingCode = null
+
+
+    if(found.length === 1) {
+      renamingCode = found[0]
+    }
+
+    else if(found.length > 1){
+      console.log("Multiple mfa codes are matching the search name:")
+
+      logMfaCode(null, found, false, true, true)
+      const ans = await question("please select number which one you want to rename (Enter number): ", found.map((_, index) => String(index + 1)))
+
+      renamingCode = found[ans - 1]
+
+    }
+
+    console.log("Renaming:")
+
+    logMfaCode(null, [
+      renamingCode,
+    ], false, true)
+
+
+    const ans = await question(
+      `
+What you want to change? ${renamingCode?.issuer} - ${renamingCode?.name}? Select number bellow:
+1) Change Name
+2) Change Issuer
+3) Change secret (Advanced)
+4) abort
+`,
+      [
+        "1",
+        "2",
+        "3",
+        "4",
+      ],
+    )
+
+    let newCodes = []
+
+    if(ans === "1"){
+
+      const newName = await question("Enter new mfa name: ")
+
+      newCodes = codes.codes.map(code =>  {
+        if(code.secret === renamingCode.secret){
+          return {
+            ...code,
+            name: newName,
+          }
+        }
+        else {
+          return code
+        }
+      })
+    }
+
+    else if(ans === "2"){
+
+      const newName = await question("Enter new mfa Issuer: ")
+
+      newCodes = codes.codes.map(code =>  {
+        if(code.secret === renamingCode.secret){
+          return {
+            ...code,
+            issuer: newName,
+          }
+        }
+        else {
+          return code
+        }
+      })
+    }
+
+    else if(ans === "3"){
+
+      const newName = await question("This option is advanced and can lead to potential data lose. Enter new secret for mfa: ")
+
+      newCodes = codes.codes.map(code =>  {
+        if(code.secret === renamingCode.secret){
+          return {
+            ...code,
+            secret: newName,
+          }
+        }
+        else {
+          return code
+        }
+      })
+
+    }
+
+    else if(ans === "4"){
+      console.log("Aborted")
+      process.exit(0)
+    }
+
+    await writeJSONVersion(newCodes)
+
+    console.log("Renamed!")
+    process.exit(0)
+  }
+
+}
+
+async function logMfaCode(mfaName, codes,  copy = false, all = false, logNumbers = false) {
+  if (all === true) {
+    const result = []
+    codes?.forEach((code) => {
+      const transformed = parseObject(code)
+      const otp = new OTPAuth.TOTP(transformed)
+      const token = otp.generate()
+
+      result.push({
+        issuer: transformed.issuer,
+        name: transformed.label,
+        token,
+      })
+    })
+
+    if (result.length) {
+      result.sort( (a, b) => {
+        return a.name.localeCompare(b.name)
+      })
+
+      printTable(result, logNumbers)
+
+    } else {
+      console.log("Nothing to show")
+    }
+  }
+  else {
+
+    const searchedCode = search(codes, mfaName)
+
+    if (!searchedCode) {
+      console.warn("Mfa code not found, try running script again with '--all' flag or '--help' for help")
+      process.exit(0)
+    }
+
+    const transformed = parseObject(searchedCode)
+    const otp = new OTPAuth.TOTP(transformed)
+
+    const token = otp.generate()
+
+    if(copy){
+
+      // TODO - Remove deps by doing check manually without libs On wayland process won't exit for about 5 minutes.
+      // clipboardy can't be used. Running spawn manually. Refactor to run spawn for all platforms
+      const isRunningOnWayland = isWayland()
+
+      if(isRunningOnWayland){
+        spawn("wl-copy", [
+          token,
+        ], {detached: true})
+      }
+      else{
+        await clipboard.write(token)
+      }
+
+    }
+
+    console.log(token)
+  }
+}
