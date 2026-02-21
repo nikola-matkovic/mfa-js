@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "path"
 import { fileURLToPath } from "url"
 import clipboard from "clipboardy"
 import isWayland from "is-wayland"
-import { spawn } from "node:child_process"
+import { spawn, execSync } from "node:child_process"
 import qrcode from "qrcode-terminal"
 
 const MFA_FOLDER_NAME = "mfa"
@@ -139,6 +139,24 @@ function toOtpAuthUrl(mfa) {
 }
 
 
+function checkJsonValidity(jsonString) {
+  try {
+    const data = JSON.parse(jsonString)
+
+    if (!Array.isArray(data)) {return false}
+
+    for (const obj of data) {
+      if (typeof obj !== "object" || obj === null) {return false}
+
+      if (!("issuer" in obj) || !("name" in obj) || !("secret" in obj)) {return false}
+    }
+
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
 async function handleExport(){
   const codes = await getCodesFromJsonFile(true)
 
@@ -203,7 +221,7 @@ Which method you prefer for exporting? (Enter one of numbers bellow)
   }
 
   else if(method === "3"){
-    const json = JSON.stringify(toExportArray, null, 2)
+    const json = JSON.stringify(toExportArray)
 
     const ask = await question(
       `
@@ -270,13 +288,17 @@ async function handleImport(){
 Please select import method:
 1) Paste  otpauth:// or google migration url
 2) Enter name, issuer and secret key manually
+3) Json import (Fastest, preferred method for coping more codes to multiple devices)
 Tip: You can also always add screenshots of your qrcodes in \"qrcodes\" folder (Exported from google or regular mfa QR codes)
 `,
     [
       "1",
       "2",
+      "3",
     ],
   )
+
+  let final = []
 
   if(method === "1"){
 
@@ -285,18 +307,14 @@ Tip: You can also always add screenshots of your qrcodes in \"qrcodes\" folder (
     const parsed = await parseCode(url)
     const current = await getCodesFromJsonFile(true)
 
-    const final = [
+    final = [
       ...current.codes,
       parsed,
     ]
 
-    await writeJSONVersion(final)
-
-    console.log("Saved new MFA code!")
-
   }
 
-  if (method === "2") {
+  else if (method === "2") {
     const issuer = await question("Issuer:")
     const name = await question("Name (email or label):")
     const secret = await question("Secret (Base32):")
@@ -312,15 +330,81 @@ Tip: You can also always add screenshots of your qrcodes in \"qrcodes\" folder (
 
     const current = await getCodesFromJsonFile(true)
 
-    const final = [
+    final = [
       ...current.codes,
       parsed,
     ]
 
-    await writeJSONVersion(final)
-
-    console.log("Saved new MFA code!")
   }
+
+  else if(method === "3"){
+
+    const answer = await question(`
+You can either paste json directly or copy it to clipboard and we will try to read it from clipboard. Select method:
+1) Read from last clipboard entry (Paste) (More secure / not logged to screen)
+2) Paste json directly
+`, [
+      "1",
+      "2",
+    ])
+
+    let json
+
+    if(answer === "1"){
+
+      let clipboardEntry
+
+      if(isWayland()){
+
+        try{
+          clipboardEntry = execSync("wl-paste", { encoding: "utf8" })
+
+        }
+        catch(e){
+          console.log("Error in reading from clipboard! Make sure you have correct json / without new lines in clipboard")
+          process.exit(1)
+        }
+      }
+      else {
+        clipboardEntry = clipboard.writeSync()
+      }
+
+
+      json = clipboardEntry
+    }
+
+    else if(answer === "2"){
+      json = await question("Paste json to import \n")
+    }
+
+
+    const codes = await getCodesFromJsonFile(true)
+
+    const valid = checkJsonValidity(json)
+
+    if(!valid){
+      console.log("Invalid json found in clipboard, exiting!")
+      process.exit(1)
+    }
+
+    const parsed = JSON.parse(json)
+
+    console.log(parsed.length, Array.isArray(parsed))
+
+    final = [
+      ...codes.codes,
+      ...parsed,
+    ]
+
+  }
+
+  final = await writeJSONVersion(final)
+
+  console.log("Saved new MFA codes!")
+
+  console.log("New mfa full list:")
+
+  logMfaCode(null, final, false, true)
 
 }
 
@@ -903,14 +987,60 @@ async function readQRCode(imagePath) {
 
 
 async function writeJSONVersion(newCodes) {
+  const grouped = new Map()
+
+  for (const code of newCodes) {
+    if (!grouped.has(code.secret)) {
+      grouped.set(code.secret, [])
+    }
+
+    grouped.get(code.secret).push(code)
+  }
+
+  const result = []
+
+  for (const [
+    secret,
+    codes,
+  ] of grouped) {
+    if (codes.length === 1) {
+      result.push(codes[0])
+      continue
+    }
+
+    const unique = []
+
+    for (const c of codes) {
+      if (!unique.find(u => u.name === c.name && u.issuer === c.issuer)) {
+        unique.push(c)
+      }
+    }
+
+    if (unique.length === 1) {
+      result.push(unique[0])
+      continue
+    }
+
+    const ans = await question(
+      "Duplicate found:\n" +
+      unique.map((c, i) => `${i + 1}) ${c.issuer} - ${c.name}`).join("\n") +
+      `\nWhich one do you want to keep? [1-${unique.length}]\n`,
+      unique.map((_, i) => String(i + 1)),
+    )
+
+    result.push(unique[Number(ans) - 1])
+  }
+
   const fileName = new Date().toISOString().replaceAll(":", "-") + ".json"
   const folderPath = join(__dirname, MFA_FOLDER_NAME)
   const filePath = join(folderPath, fileName)
-  const jsonString = JSON.stringify(newCodes, null, 2)
+  const jsonString = JSON.stringify(result, null, 2)
 
   try {
     fs.mkdirSync(folderPath, { recursive: true })
     fs.writeFileSync(filePath, jsonString)
+
+    return result
   }
   catch (error) {
     console.error(
