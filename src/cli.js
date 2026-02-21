@@ -12,6 +12,7 @@ export default function handleArgs() {
     export: args.includes("--export") || args.includes("-e"),
     import: args.includes("--import") || args.includes("-i"),
     showAll: args.includes("--all") || args.includes("-a"),
+    multiple: args.includes("--multiple") || args.includes("-m"),
     help: args.includes("--help") || args.includes("-h"),
   }
 

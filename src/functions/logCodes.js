@@ -430,11 +430,15 @@ Add new tokens:
 
 Arguments:
   name      Search MFA entry by name or issuer. If omitted, all entries are shown.
+            By default only show first match. You can add   ${GREEN} --multiple  ${RESET} to show all found matches
 
 Options:
 
   ${GREEN}-c, --copy, --auto-copy${RESET}
       Copy MFA token - if found.
+
+  ${GREEN}-m, --multiple ${RESET}
+      Shows all matches - not just first one. Used with name argument!
 
   ${GREEN}-q, --read-qr-codes${RESET}
       Scan qr codes from qrcodes folder
@@ -506,7 +510,7 @@ Options:
 
   // Default case - JSON read -
   // If no json then first json will be created (no need for overwrite)
-  await handleDefaultJsonRead(params.name, params.copy, params.showAll, false)
+  await handleDefaultJsonRead(params.name, params.copy, params.showAll, false, params.multiple)
 }
 
 async function handleQrCodeRead(overwrite){
@@ -572,14 +576,14 @@ function diffMfa(oldMap, newMap) {
 }
 
 
-async function handleDefaultJsonRead(name, copy = false, all = false, doNotTryQrs = false) {
+async function handleDefaultJsonRead(name, copy = false, all = false, doNotTryQrs = false, multiple = false) {
   const codes = await getCodesFromJsonFile(doNotTryQrs)
 
   if(codes.codes.length === 0){
     console.log("No MFA found. PLease import some.")
   }
   else{
-    await logMfaCode(name, codes.codes, copy, all)
+    await logMfaCode(name, codes.codes, copy, all, false, multiple)
     process.exit(0)
   }
 }
@@ -1436,8 +1440,9 @@ What you want to change? ${renamingCode?.issuer} - ${renamingCode?.name}? Select
 
 }
 
-async function logMfaCode(mfaName, codes,  copy = false, all = false, logNumbers = false) {
-  if (all === true) {
+async function logMfaCode(mfaName, codes,  copy = false, all = false, logNumbers = false, multiple = false) {
+
+  const printCodes = (codes) => {
     const result = []
     codes?.forEach((code) => {
       const transformed = parseObject(code)
@@ -1462,12 +1467,24 @@ async function logMfaCode(mfaName, codes,  copy = false, all = false, logNumbers
       console.log("Nothing to show")
     }
   }
+
+
+
+  if (all === true) {
+    printCodes(codes)
+  }
   else {
 
-    const searchedCode = search(codes, mfaName)
+
+    const searchedCode = search(codes, mfaName, !multiple)
 
     if (!searchedCode) {
       console.warn("Mfa code not found, try running script again with '--all' flag or '--help' for help")
+      process.exit(0)
+    }
+
+    if(multiple){
+      printCodes(searchedCode)
       process.exit(0)
     }
 
