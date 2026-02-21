@@ -13,16 +13,16 @@ import isWayland from "is-wayland"
 import { spawn, execSync } from "node:child_process"
 import qrcode from "qrcode-terminal"
 
-const MFA_FOLDER_NAME = "mfa"
-const QR_CODES_FOLDER_NAME = "qrcodes"
-const GREEN = "\x1b[32m"
-const RESET = "\x1b[0m"
-
 const __filename = fileURLToPath(import.meta.url)
 let __dirname = dirname(__filename)
-
-
 __dirname = resolve(__dirname, "../../")
+
+// Almost const/can be changed once, good enough
+let MFA_DIR_PATH = join(__dirname, "mfa")
+let QR_CODES_DIR_PATH = join(__dirname, "qrcodes")
+
+const GREEN = "\x1b[32m"
+const RESET = "\x1b[0m"
 
 function parseObject(object) {
   return {
@@ -473,6 +473,14 @@ Options:
 
   }
 
+  if(params.qrCodesFolderPath){
+    QR_CODES_DIR_PATH = params.qrCodesFolderPath
+  }
+
+  if(params.mfaFolderPath){
+    MFA_DIR_PATH = params.mfaFolderPath
+  }
+
   const specialFlags = [
     params.delete,
     params.rename,
@@ -600,7 +608,7 @@ async function createNewJsonVersion(codes, ignoreOldVersions = false) {
   }
 
   else{
-    const dir = join(__dirname, MFA_FOLDER_NAME)
+    const dir = MFA_DIR_PATH
     fs.mkdirSync(dir, {recursive: true})
 
     let files
@@ -854,7 +862,7 @@ Do you want to keep it?
 
 async function getCodesFromJsonFile(skipQrBackup) {
   // Handle cases when there is no mfa folder, or folder is empty
-  const dir = join(__dirname, MFA_FOLDER_NAME)
+  const dir = MFA_DIR_PATH
 
   let codesResponse = {
     codes: [],
@@ -1036,7 +1044,7 @@ async function writeJSONVersion(newCodes) {
   }
 
   const fileName = new Date().toISOString().replaceAll(":", "-") + ".json"
-  const folderPath = join(__dirname, MFA_FOLDER_NAME)
+  const folderPath = MFA_DIR_PATH
   const filePath = join(folderPath, fileName)
   const jsonString = JSON.stringify(result, null, 2)
 
@@ -1076,7 +1084,7 @@ async function parseCode(code) {
 
 
 async function getCodesFromImages() {
-  const dir = join(__dirname, QR_CODES_FOLDER_NAME)
+  const dir =  QR_CODES_DIR_PATH
 
   if (!fs.existsSync(dir)) {
     console.log("Folder does not exist:", dir, "trying to repair it....")
@@ -1111,7 +1119,7 @@ async function getCodesFromImages() {
     process.exit(1)
   }
 
-  imageFiles = imageFiles.map((imageFile) => join(__dirname, QR_CODES_FOLDER_NAME, imageFile))
+  imageFiles = imageFiles.map((imageFile) => join(QR_CODES_DIR_PATH, imageFile))
 
   imageFiles = imageFiles.filter((imageFile) => !imageFile.endsWith(".gitignore"))
 

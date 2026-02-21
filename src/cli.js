@@ -16,14 +16,39 @@ export default function handleArgs() {
     help: args.includes("--help") || args.includes("-h"),
   }
 
-  const nameArg = args.find((a) => !a.startsWith("-"))
+  let qrCodesFolderPath = null
+  let mfaFolderPath = null
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--qrcodes-path") {
+      qrCodesFolderPath = args[i + 1]
+      i++
+      continue
+    }
+
+    if (args[i] === "--mfa-path") {
+      mfaFolderPath = args[i + 1]
+      i++
+      continue
+    }
+  }
+
+  const usedValues = [
+    qrCodesFolderPath,
+    mfaFolderPath,
+  ].filter(Boolean)
+  const nameArg = args.find(a => !a.startsWith("-") && !usedValues.includes(a))
   const name = nameArg ?? null
 
-  if(!name) {flags.showAll = true}
+  if (!name) {
+    flags.showAll = true
+  }
 
   const params = {
     ...flags,
     name,
+    qrCodesFolderPath,
+    mfaFolderPath,
   }
 
   choseOperationBasedOnFlags(params)
