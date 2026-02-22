@@ -486,6 +486,7 @@ Options:
     params.rename,
     params.import,
     params.export,
+    params.restore,
   ]
     .filter(Boolean)
 
@@ -511,6 +512,10 @@ Options:
     return handleImport()
   }
 
+  if (params.restore) {
+    return handleRestore()
+  }
+
   if (params.readQrCodes) {
     // Should handle "copy and overwrite + log it to console"
     return handleQrCodeRead(params.overwrite)
@@ -519,6 +524,21 @@ Options:
   // Default case - JSON read -
   // If no json then first json will be created (no need for overwrite)
   await handleDefaultJsonRead(params.name, params.copy, params.showAll, false, params.multiple)
+}
+
+function getTimeFromFIle(filename){
+
+  const str = filename.replace(".json", "")
+
+  const d = new Date(str.replace(/-(\d{2})-(\d{2})\./, ":$1:$2."))
+
+  const pad = n => String(n).padStart(2, "0")
+
+  const out =
+  `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} at ` +
+  `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+
+  return out
 }
 
 async function handleQrCodeRead(overwrite){
@@ -535,6 +555,95 @@ async function handleQrCodeRead(overwrite){
 
     process.exit(0)
   }
+}
+
+async function handleRestore() {
+  // Handle cases when there is no mfa folder, or folder is empty
+  const dir = MFA_DIR_PATH
+
+  if (!fs.existsSync(dir)) {
+    console.log("Folder does not exist:", dir)
+  }
+
+  let files = []
+
+  try{
+    files = readdirSync(dir)
+      .filter((f) => f.endsWith(".json"))
+      .sort((a, b) => a.localeCompare(a))
+  }
+  catch(e){
+    console.error("Error listing files in", dir, "Please check permissions manually", e)
+    process.exit(1)
+  }
+
+  if (files.length === 0) {
+    console.log("No version to restore!")
+  }
+
+  if(files.length === 1){
+    console.log("There is only one version! nothing to restore.")
+  }
+
+  const rows = files.map(f => {
+    return {
+      "Time": getTimeFromFIle(f),
+    }
+  })
+
+  printTable(rows, true)
+
+  const ans = await question("Select which version yo want to restore. Enter number bellow \n", files.map((_, index) => String(index + 1)))
+
+  // After this we can be sure there is at least one json file
+  const filePath = join(dir, files[ans - 1])
+  let codes
+
+  try{
+    codes = fs.readFileSync(filePath, "utf8")
+  }
+  catch(e){
+    console.error("Error reading file", filePath, "e", " please check permissions")
+    process.exit(1)
+  }
+
+  try {
+    codes = JSON.parse(codes)
+  } catch (e) {
+    console.error("Can't parse json in ", filePath, " Please try to fix  manually and try again.", e)
+    process.exit(1)
+  }
+
+  console.log("here is the preview of version you are restoring to:")
+  logMfaCode(null, codes, false, true, false, false)
+
+  const ans2 = await question("Continue? [Y/Yes, N/No]", [
+    "Y",
+    "Yes",
+    "N",
+    "No",
+  ])
+
+  if([
+    "y",
+    "yes",
+  ].includes(ans2.toLowerCase())){
+    const newFileName = new Date().toISOString().replaceAll(":", "-") + ".json"
+
+    try{
+      fs.copyFileSync(filePath, join(MFA_DIR_PATH, newFileName ))
+      console.log("Restore completed!")
+    }
+    catch(e){
+      console.log("Restore failed! You can restore manaly by coping ", filePath, "to", join(MFA_DIR_PATH, newFileName ) )
+    }
+  }
+
+  else{
+    console.log("Bye")
+    process.exit(0)
+  }
+
 }
 
 function diffMfa(oldMap, newMap) {
