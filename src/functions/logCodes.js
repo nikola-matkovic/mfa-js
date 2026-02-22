@@ -415,7 +415,7 @@ export async function choseOperationBasedOnFlags(params) {
     console.log(`
 First time usage:
   Screenshot MFA QR codes (from google auth export or regular mfa qr codes) and place screenshots in "qrcodes" folder
-  Then run ${GREEN} node index.js -q ${RESET}
+  Then run ${GREEN} node index.js ${RESET}
 
 Show all:
   ${GREEN} node index.js ${RESET}
@@ -462,6 +462,18 @@ Options:
       Import new MFA.
       Supports: otpauth:// URL, Google migration URL or Manual secret entry
 
+  ${GREEN}--restore${RESET}
+      If you made some mistake and lost, you can restore old version.
+      By default full history is saved to prevent data loss.
+
+  ${GREEN} --qrcodes-path ${RESET}
+      Use different qrcodes location.
+      Strongly recommended to use this alongside --mfa-path to prevent data loss.
+
+  ${GREEN} ----mfa-path ${RESET}
+      Use different mfa directory location.
+      Strongly recommended to use this alongside --qrcodes-path to prevent data loss.
+
   ${GREEN}-h, --help${RESET}
       Show this help message.
 
@@ -469,8 +481,6 @@ Options:
       Show all saved MFA codes. It's default when name is not specified`)
 
     process.exit(0)
-
-
   }
 
   if(params.qrCodesFolderPath){
