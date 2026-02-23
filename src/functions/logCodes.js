@@ -2,7 +2,8 @@ import * as OTPAuth from "otpauth"
 
 import fs, { readdirSync } from "fs"
 import { Jimp } from "jimp"
-import jsQR from "jsqr"
+import { readBarcodes } from "zxing-wasm/reader"
+
 import parser from "otpauth-migration-parser"
 
 import readline from "node:readline"
@@ -777,9 +778,9 @@ async function createNewJsonVersion(codes, ignoreOldVersions = false) {
 
           if(changed.length){
             console.log("Following MFA tokens are changed:")
-            logMfaCode(null, changed.old, false, true)
+            logMfaCode(null, changed.map(c => c.old), false, true)
             console.log("with")
-            logMfaCode(null, changed.new, false, true)
+            logMfaCode(null, changed.map(c => c.new), false, true)
 
             const answer = await question(
               `
@@ -1105,15 +1106,24 @@ async function readQRCode(imagePath) {
     height: image.bitmap.height,
   }
 
-  const decodedQR = jsQR(imageData.data, imageData.width, imageData.height)
 
-  if (decodedQR) {
-    return decodedQR.data
-  } else {
+  const result = await readBarcodes(imageData, {
+    tryHarder: true,
+    formats: [
+      "QRCode",
+    ],
+  })
+
+  if (!result.length) {
     console.error("Image ", imagePath, "has no QR code")
 
     return ""
   }
+
+  console.log(result)
+
+  return result[0].text
+
 }
 
 
