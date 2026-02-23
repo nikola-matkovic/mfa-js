@@ -123,7 +123,7 @@ Options:
       Use different qrcodes location.
       Strongly recommended to use this alongside --mfa-path to prevent data loss.
 
-   ----mfa-path
+   --mfa-path
       Use different mfa directory location.
       Strongly recommended to use this alongside --qrcodes-path to prevent data loss.
 
