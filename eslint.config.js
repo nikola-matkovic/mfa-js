@@ -6,7 +6,21 @@ export default defineConfig(
     files: [
       "**/*.{vue,ts,mts,tsx,js}",
     ],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        process: "readonly",
+      },
+    },
     rules: {
+      "comma-spacing": [
+        "error",
+        { "before": false, "after": true },
+      ],
+      "space-in-parens": [
+        "error",
+        "never",
+      ],
       "semi": [
         "error",
         "never",
@@ -42,6 +56,8 @@ export default defineConfig(
       "no-debugger": "error",
       "prefer-const": "warn",
       "no-var": "error",
+      "no-undef": "error",
+
       eqeqeq: [
         "error",
         "always",
@@ -52,7 +68,7 @@ export default defineConfig(
       ],
       "no-unused-vars": [
         "warn",
-        { argsIgnorePattern: "^_" },
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       camelcase: [
         "warn",
@@ -87,6 +103,10 @@ export default defineConfig(
           min: 2, exceptions: [
             "i",
             "j",
+            "a",
+            "b",
+            "_",
+            "e",
           ],
         },
       ],

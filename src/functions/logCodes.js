@@ -13,6 +13,7 @@ import clipboard from "clipboardy"
 import { spawn, execSync } from "node:child_process"
 import qrcode from "qrcode-terminal"
 import process from "node:process"
+import {colors, logToUserConsole } from "./logToUserConsole.js"
 
 const __filename = fileURLToPath(import.meta.url)
 let __dirname = dirname(__filename)
@@ -22,8 +23,7 @@ __dirname = resolve(__dirname, "../../")
 let MFA_DIR_PATH = join(__dirname, "mfa")
 let QR_CODES_DIR_PATH = join(__dirname, "qrcodes")
 
-const GREEN = "\x1b[32m"
-const RESET = "\x1b[0m"
+const {GREEN, RESET } = colors
 
 function parseObject(object) {
   return {
@@ -34,6 +34,65 @@ function parseObject(object) {
     period: 30,
     secret: object.secret,
   }
+}
+
+function printTable(rows, logNumbers) {
+  if (!rows.length) { return }
+
+  const baseHeaders = Object.keys(rows[0])
+  const headers = logNumbers ? [
+    "#",
+    ...baseHeaders,
+  ] : baseHeaders
+
+  const preparedRows = logNumbers
+    ? rows.map((row, i) => ({
+      "#": String(i + 1),
+      ...row,
+    }))
+    : rows
+
+  const widths = headers.map(header =>
+    Math.max(
+      header.length,
+      ...preparedRows.map(row => String(row[header] ?? "").length),
+    ))
+
+  const line = (left, mid, right) =>
+    GREEN +
+    left +
+    widths.map(width => "─".repeat(width + 2)).join(mid) +
+    right +
+    RESET
+
+  const formatRow = (row) =>
+    GREEN + "│" + RESET +
+    headers
+      .map((header, i) => {
+        const value = String(row[header] ?? "")
+        const padded = " " + value.padEnd(widths[i]) + " "
+
+        if (i === headers.length - 1) {
+          return GREEN + padded + RESET
+        }
+
+        return padded
+      })
+      .join(GREEN + "│" + RESET) +
+    GREEN + "│" + RESET
+
+  logToUserConsole("normal", line("┌", "┬", "┐"))
+  logToUserConsole("normal", formatRow(Object.fromEntries(headers.map(header => [
+    header,
+    header,
+  ]))))
+  logToUserConsole("normal", line("├", "┼", "┤"))
+
+  for (const row of preparedRows) {
+    logToUserConsole("normal", formatRow(row))
+  }
+
+  logToUserConsole("normal", line("└", "┴", "┘"))
 }
 
 
@@ -53,68 +112,8 @@ function isWayland() {
   return false
 }
 
-function printTable(rows, logNumbers) {
-  if (!rows.length) { return }
 
-  const baseHeaders = Object.keys(rows[0])
-  const headers = logNumbers ? [
-    "#",
-    ...baseHeaders,
-  ] : baseHeaders
-
-  const preparedRows = logNumbers
-    ? rows.map((row, i) => ({
-      "#": String(i + 1),
-      ...row,
-    }))
-    : rows
-
-  const widths = headers.map(h =>
-    Math.max(
-      h.length,
-      ...preparedRows.map(r => String(r[h] ?? "").length),
-    ))
-
-  const line = (left, mid, right) =>
-    GREEN +
-    left +
-    widths.map(w => "─".repeat(w + 2)).join(mid) +
-    right +
-    RESET
-
-  const formatRow = (row) =>
-    GREEN + "│" + RESET +
-    headers
-      .map((h, i) => {
-        const value = String(row[h] ?? "")
-        const padded = " " + value.padEnd(widths[i]) + " "
-
-        if (i === headers.length - 1) {
-          return GREEN + padded + RESET
-        }
-
-        return padded
-      })
-      .join(GREEN + "│" + RESET) +
-    GREEN + "│" + RESET
-
-  console.log(line("┌", "┬", "┐"))
-  console.log(formatRow(Object.fromEntries(headers.map(h => [
-    h,
-    h,
-  ]))))
-  console.log(line("├", "┼", "┤"))
-
-  for (const row of preparedRows) {
-    console.log(formatRow(row))
-  }
-
-  console.log(line("└", "┴", "┘"))
-}
-
-
-
-function question(q, allowedAnswers = []) {
+function question(questionString, allowedAnswers = []) {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -122,9 +121,9 @@ function question(q, allowedAnswers = []) {
 
   return new Promise(resolve => {
 
-    const ask = (q) => {
+    const ask = (questionString) => {
 
-      rl.question(q, ans => {
+      rl.question(questionString, ans => {
 
         if(allowedAnswers.length){
           const valid = allowedAnswers.find(a => a.toLowerCase() === ans.toLowerCase())
@@ -133,7 +132,7 @@ function question(q, allowedAnswers = []) {
             rl.close()
             resolve(ans)
           } else {
-            console.log("Wrong answer, please try again! Allowed answers are:", allowedAnswers)
+            logToUserConsole("warn", "Wrong answer, please try again! Allowed answers are:", allowedAnswers)
             ask("")
           }
         }
@@ -145,7 +144,7 @@ function question(q, allowedAnswers = []) {
       })
     }
 
-    ask(q)
+    ask(questionString)
   })
 }
 
@@ -170,7 +169,7 @@ function checkJsonValidity(jsonString) {
     }
 
     return true
-  } catch (e) {
+  } catch (e) { // eslint-disable-line
     return false
   }
 }
@@ -179,14 +178,13 @@ async function handleExport(){
   const codes = await getCodesFromJsonFile(true)
 
   if(codes.codes.length === 0){
-    console.log("You do not have any MFA imported, so there is nothing to export eater!")
+    logToUserConsole("warn", "You do not have any MFA imported, so there is nothing to export eater!")
     process.exit(1)
   }
 
-  console.log("Tip: If you just want to move existing codes to another device for using with this script just copy mfa folder to another device and all you codes will be there.")
+  logToUserConsole("info", "Tip: If you just want to move existing codes to another device for using with this script just copy mfa folder to another device and all you codes will be there.")
 
   logMfaCode(null, codes.codes, false, true, true)
-
 
   const answer = await question("Please enter which codes you want to export (single number or numbers separated by comma \",\", or type \"all\" to export all \n")
 
@@ -207,9 +205,6 @@ async function handleExport(){
 
       if(Number.isInteger(numeric) && numeric <= codes.codes.length && numeric > 0){
         toExportArray.push(codes.codes[numeric - 1])
-      }
-      else {
-        console.log("skipping ", index)
       }
     })
 
@@ -232,10 +227,10 @@ Which method you prefer for exporting? (Enter one of numbers bellow)
 
 
   if(method  === "1"){
-    console.log("Bellow are qr codes for export.")
+    logToUserConsole("info", "Bellow are qr codes for export.")
   }
   else if(method === "2"){
-    console.log("Bellow are  otpauth:// urls. \n")
+    logToUserConsole("info", "Bellow are  otpauth:// urls. \n")
   }
 
   else if(method === "3"){
@@ -256,11 +251,11 @@ Do you want to copy JSON to clipboard (more secure)?
     )
 
     if(ask === "2" || ask === "3"){
-      console.log(json)
+      logToUserConsole("normal", json)
     }
 
     if(ask === "1" || ask === "3"){
-      // TODO - Remove deps by doing check manually without libs On wayland process won't exit for about 5 minutes.
+      // TODO - Remove deps by doing check manually without libs. On wayland process won't exit for about 5 minutes.
       // clipboardy can't be used. Running spawn manually. Refactor to run spawn for all platforms
       const isRunningOnWayland = isWayland()
 
@@ -273,10 +268,10 @@ Do you want to copy JSON to clipboard (more secure)?
         await clipboard.write(json)
       }
 
-      console.log("Copied to clipboard")
+      logToUserConsole("info", "Copied to clipboard")
     }
 
-    console.log("Bye!")
+    logToUserConsole("normal", "Bye!")
 
     process.exit(0)
 
@@ -287,14 +282,14 @@ Do you want to copy JSON to clipboard (more secure)?
     const url = toOtpAuthUrl(mfa)
 
     if(method === "1"){
-      console.log(`${mfa?.issuer} - ${mfa.name}:`)
+      logToUserConsole("normal", `${mfa?.issuer} - ${mfa.name}:`)
       qrcode.generate(url, {small: true})
-      console.log("\n")
+      logToUserConsole("normal", "\n")
     }
 
     else if(method === "2"){
-      console.log(`${mfa?.issuer ? mfa.issuer + " - " : ""}${mfa.name} (In case of manual import - secret is ${mfa.secret}) `)
-      console.log(url + "\n")
+      logToUserConsole("normal", `${mfa?.issuer ? mfa.issuer + " - " : ""}${mfa.name} (In case of manual import - secret is ${mfa.secret}) `)
+      logToUserConsole("normal", url + "\n")
     }
   })
 
@@ -378,8 +373,8 @@ You can either paste json directly or copy it to clipboard and we will try to re
           clipboardEntry = execSync("wl-paste", { encoding: "utf8" })
 
         }
-        catch(e){
-          console.log("Error in reading from clipboard! Make sure you have correct json / without new lines in clipboard")
+        catch(e){ //eslint-disable-line no-unused-vars
+          logToUserConsole("error", "Error in reading from clipboard! Make sure you have correct json / without new lines in clipboard")
           process.exit(1)
         }
       }
@@ -401,13 +396,11 @@ You can either paste json directly or copy it to clipboard and we will try to re
     const valid = checkJsonValidity(json)
 
     if(!valid){
-      console.log("Invalid json found in clipboard, exiting!")
+      logToUserConsole("error", "Invalid json found in clipboard, exiting!")
       process.exit(1)
     }
 
     const parsed = JSON.parse(json)
-
-    console.log(parsed.length, Array.isArray(parsed))
 
     final = [
       ...codes.codes,
@@ -418,9 +411,9 @@ You can either paste json directly or copy it to clipboard and we will try to re
 
   final = await writeJSONVersion(final)
 
-  console.log("Saved new MFA codes!")
+  logToUserConsole("info", "Saved new MFA codes!")
 
-  console.log("New mfa full list:")
+  logToUserConsole("normal", "New mfa full list:")
 
   logMfaCode(null, final, false, true)
 
@@ -429,8 +422,7 @@ You can either paste json directly or copy it to clipboard and we will try to re
 export async function choseOperationBasedOnFlags(params) {
 
   if(params.help) {
-
-    console.log(`
+    logToUserConsole("normal", `
 First time usage:
   Screenshot MFA QR codes (from google auth export or regular mfa qr codes) and place screenshots in "qrcodes" folder
   Then run ${GREEN} node index.js ${RESET}
@@ -558,13 +550,13 @@ function getTimeFromFIle(filename){
 
   const str = filename.replace(".json", "")
 
-  const d = new Date(str.replace(/-(\d{2})-(\d{2})\./, ":$1:$2."))
+  const date = new Date(str.replace(/-(\d{2})-(\d{2})\./, ":$1:$2."))
 
-  const pad = n => String(n).padStart(2, "0")
+  const pad = num => String(num).padStart(2, "0") // Add leading zero
 
   const out =
-  `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} at ` +
-  `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} at ` +
+  `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 
   return out
 }
@@ -573,12 +565,12 @@ async function handleQrCodeRead(overwrite){
   const codes = await getCodesFromImages()
 
   if(codes.codes.length === 0){
-    console.log("No MFA found. PLease import some.")
+    logToUserConsole("warn", "No MFA found. PLease import some.")
     process.exit(1)
   }
   else{
     await createNewJsonVersion(codes.codes, overwrite)
-    console.log("Finished! Full mfa list:")
+    logToUserConsole("normal", "Finished! Full mfa list:")
     await handleDefaultJsonRead(null, false, true, true)
 
     process.exit(0)
@@ -590,32 +582,34 @@ async function handleRestore() {
   const dir = MFA_DIR_PATH
 
   if (!fs.existsSync(dir)) {
-    console.log("Folder does not exist:", dir)
+    logToUserConsole("warn", "Folder does not exist:", dir)
   }
 
   let files = []
 
   try{
     files = readdirSync(dir)
-      .filter((f) => f.endsWith(".json"))
-      .sort((a, b) => a.localeCompare(a))
+      .filter((file) => file.endsWith(".json"))
+      .sort((a, b) => a.localeCompare(b))
   }
-  catch(e){
-    console.error("Error listing files in", dir, "Please check permissions manually", e)
+  catch(e){ //eslint-disable-line no-unused-vars
+    logToUserConsole("error", "Error listing files in", dir, "Please check permissions manually")
     process.exit(1)
   }
 
   if (files.length === 0) {
-    console.log("No version to restore!")
+    logToUserConsole("warn", "No version to restore!")
+    process.exit(0)
   }
 
-  if(files.length === 1){
-    console.log("There is only one version! nothing to restore.")
+  else if(files.length === 1){
+    logToUserConsole("warn", "There is only one version! nothing to restore.")
+    process.exit(0)
   }
 
-  const rows = files.map(f => {
+  const rows = files.map(file => {
     return {
-      "Time": getTimeFromFIle(f),
+      "Time": getTimeFromFIle(file),
     }
   })
 
@@ -630,19 +624,19 @@ async function handleRestore() {
   try{
     codes = fs.readFileSync(filePath, "utf8")
   }
-  catch(e){
-    console.error("Error reading file", filePath, "e", " please check permissions")
+  catch(error){
+    logToUserConsole("error", "Error reading file", filePath, " please check permissions", error)
     process.exit(1)
   }
 
   try {
     codes = JSON.parse(codes)
-  } catch (e) {
-    console.error("Can't parse json in ", filePath, " Please try to fix  manually and try again.", e)
+  } catch (e) { // eslint-disable-line
+    logToUserConsole("error", "Can't parse json in ", filePath, " Please try to fix  manually and try again.")
     process.exit(1)
   }
 
-  console.log("here is the preview of version you are restoring to:")
+  logToUserConsole("normal", "here is the preview of version you are restoring to:")
   logMfaCode(null, codes, false, true, false, false)
 
   const ans2 = await question("Continue? [Y/Yes, N/No]", [
@@ -659,16 +653,16 @@ async function handleRestore() {
     const newFileName = new Date().toISOString().replaceAll(":", "-") + ".json"
 
     try{
-      fs.copyFileSync(filePath, join(MFA_DIR_PATH, newFileName ))
-      console.log("Restore completed!")
+      fs.copyFileSync(filePath, join(MFA_DIR_PATH, newFileName))
+      logToUserConsole("info", "Restore completed!")
     }
-    catch(e){
-      console.log("Restore failed! You can restore manaly by coping ", filePath, "to", join(MFA_DIR_PATH, newFileName ) )
+    catch(e){ //eslint-disable-line
+      logToUserConsole("error", "Restore failed! You can restore manually by coping ", filePath, "to", join(MFA_DIR_PATH, newFileName))
     }
   }
 
   else{
-    console.log("Bye")
+    logToUserConsole("normal", "Bye")
     process.exit(0)
   }
 
@@ -725,7 +719,7 @@ async function handleDefaultJsonRead(name, copy = false, all = false, doNotTryQr
   const codes = await getCodesFromJsonFile(doNotTryQrs)
 
   if(codes.codes.length === 0){
-    console.log("No MFA found. PLease import some.")
+    logToUserConsole("warn", "No MFA found. PLease import some.")
   }
   else{
     await logMfaCode(name, codes.codes, copy, all, false, multiple)
@@ -740,7 +734,7 @@ async function createNewJsonVersion(codes, ignoreOldVersions = false) {
       await writeJSONVersion(codes)
     }
     else{
-      console.log("Nothing to write, no codes found")
+      logToUserConsole("warn", "Nothing to write, no codes found")
     }
   }
 
@@ -782,7 +776,7 @@ async function createNewJsonVersion(codes, ignoreOldVersions = false) {
           ]
 
           if(added.length){
-            console.log("Added new MFA tokens:")
+            logToUserConsole("info", "Added new MFA tokens:")
             logMfaCode(null, added, false, true)
 
 
@@ -794,10 +788,10 @@ async function createNewJsonVersion(codes, ignoreOldVersions = false) {
           }
 
           if(changed.length){
-            console.log("Following MFA tokens are changed:")
-            logMfaCode(null, changed.map(c => c.old), false, true)
-            console.log("with")
-            logMfaCode(null, changed.map(c => c.new), false, true)
+            logToUserConsole("info", "Following MFA tokens are changed:")
+            logMfaCode(null, changed.map(change => change.old), false, true)
+            logToUserConsole("info", "with")
+            logMfaCode(null, changed.map(change => change.new), false, true)
 
             const answer = await question(
               `
@@ -855,7 +849,7 @@ Do you want to update existing with new ones? Answer with numbers bellow:
                 }
 
                 else{
-                  console.log("unknown error, answer must be [Y]es or [N]o!")
+                  logToUserConsole("error", "unknown error, answer must be [Y]es or [N]o!")
                   process.exit(1)
                 }
               }
@@ -864,20 +858,20 @@ Do you want to update existing with new ones? Answer with numbers bellow:
                 ...finalArray,
                 ...answers,
               ]
-              console.log("Updated MFA codes:")
+              logToUserConsole("info", "Updated MFA codes:")
               logMfaCode(null, answers, false, true)
 
             }
 
             else {
-              console.log("unknown error, answer must be 1 2 or 3!")
+              logToUserConsole("error", "unknown error, answer must be 1 2 or 3!")
               process.exit(1)
             }
 
           }
 
           if(removed.length){
-            console.log("The following MFA codes are missing in new QR code scan.")
+            logToUserConsole("info", "The following MFA codes are missing in new QR code scan.")
             logMfaCode(null, removed, false, true)
             const answer = await question(
               `
@@ -902,7 +896,7 @@ Do you want to keep it?
             }
 
             if(answer === "2"){
-              console.log("Following MFAs WILL BE22:32 DELETED")
+              logToUserConsole("warn", "Following MFAs WILL BE DELETED")
 
               logMfaCode(null, removed, false, true)
 
@@ -910,11 +904,11 @@ Do you want to keep it?
               const finalAnswer = await question("Are you sure? Type \"save changes\" to continue, any other answer will abort action and keep all MFAs \n")
 
               if(finalAnswer === "save changes"){
-                console.log("Changes are saved!")
+                logToUserConsole("info", "Changes are saved!")
               }
 
               else{
-                console.log("Removed MFAs will be kept")
+                logToUserConsole("info", "Removed MFAs will be kept")
 
                 finalArray = [
                   ...finalArray,
@@ -949,12 +943,12 @@ Do you want to keep it?
 
               }
 
-              console.log("Following MFAs WILL BE DELETED")
+              logToUserConsole("warn", "Following MFAs WILL BE DELETED")
 
               logMfaCode(null, deleted, false, true)
 
 
-              console.log("Following MFAs WILL BE kept")
+              logToUserConsole("info", "Following MFAs WILL BE KEPT")
 
               logMfaCode(null, kept, false, true)
 
@@ -963,7 +957,7 @@ Do you want to keep it?
 
               if(finalAnswer === "save changes"){
 
-                console.log("Changes are saved!")
+                logToUserConsole("info", "Changes are saved!")
 
                 finalArray = [
                   ...finalArray,
@@ -971,7 +965,7 @@ Do you want to keep it?
                 ]
               }
               else{
-                console.log("Removed MFAs will be kept")
+                logToUserConsole("info", "Removed MFAs will be kept")
 
                 finalArray = [
                   ...finalArray,
@@ -986,13 +980,13 @@ Do you want to keep it?
 
         }
         catch(error){
-          console.log("Error reading old MFA version, aborting", error)
+          logToUserConsole("error", "Error reading old MFA version, aborting", error)
           process.exit(1)
         }
       }
     }
-    catch(e){
-      console.log("error reading old version", e)
+    catch(e){ //eslint-disable-line no-unused-vars
+      logToUserConsole("error", "error reading old version")
     }
   }
 }
@@ -1008,11 +1002,11 @@ async function getCodesFromJsonFile(skipQrBackup) {
   }
 
   if (!fs.existsSync(dir)) {
-    console.log("Folder does not exist:", dir, "trying to repair it....")
+    logToUserConsole("warn", "Folder does not exist:", dir, "trying to repair it....")
 
     try {
       fs.mkdirSync(dir)
-      console.log("Folder", dir, " Created!")
+      logToUserConsole("info", "Folder", dir, " Created!")
 
 
       if(skipQrBackup){
@@ -1025,7 +1019,7 @@ async function getCodesFromJsonFile(skipQrBackup) {
         return codesResponse
       }
 
-      console.log("Trying to get codes from screenshots....")
+      logToUserConsole("info", "Trying to get codes from screenshots....")
 
       // Skip reading old JSON version and just create new one
       codesResponse = await getCodesFromImages()
@@ -1033,29 +1027,29 @@ async function getCodesFromJsonFile(skipQrBackup) {
 
       return codesResponse
 
-    } catch (e) {
-      console.log("Error creating folder:", dir, " Please try crating it manually!", e)
+    } catch (e) { // eslint-disable-line
+      logToUserConsole("error", "Error creating folder:", dir, " Please try crating it manually!")
       process.exit(1)
     }
   }
 
 
-  // After this line we are sure there is MFAS folder
+  // After this line we are sure there is MFAs folder
   let files = []
 
   try{
     files = readdirSync(dir)
-      .filter((f) => f.endsWith(".json"))
+      .filter((file) => file.endsWith(".json"))
       .sort((a, b) => b.localeCompare(a))
 
   }
-  catch(e){
-    console.error("Error listing files in", dir, "Please check permissions manually", e)
+  catch(e){ //eslint-disable-line no-unused-vars
+    logToUserConsole("error", "Error listing files in", dir, "Please check permissions manually")
     process.exit(1)
   }
 
   if (files.length === 0) {
-    console.log("No MFA found!")
+    logToUserConsole("warn", "No MFA found!")
 
     if(skipQrBackup){
       codesResponse = {
@@ -1067,7 +1061,7 @@ async function getCodesFromJsonFile(skipQrBackup) {
       return codesResponse
     }
 
-    console.log("Trying to get codes from screenshots....")
+    logToUserConsole("info", "Trying to get codes from screenshots....")
 
     codesResponse = await getCodesFromImages()
     await createNewJsonVersion(codesResponse.codes, true)
@@ -1083,8 +1077,8 @@ async function getCodesFromJsonFile(skipQrBackup) {
   try{
     codes = fs.readFileSync(filePath, "utf8")
   }
-  catch(e){
-    console.error("Error reading file", filePath, "e", " please check permissions")
+  catch(e){ //eslint-disable-line no-unused-vars
+    logToUserConsole("error", "Error reading file", filePath, "e", " please check permissions")
   }
 
   try {
@@ -1095,8 +1089,8 @@ async function getCodesFromJsonFile(skipQrBackup) {
       error: null,
       status: true,
     }
-  } catch (e) {
-    console.error("Can't parse json in ", filePath, " Please try to fix  manually and try again.", e)
+  } catch (e) { // eslint-disable-line no-unused-vars
+    logToUserConsole("error", "Can't parse json in ", filePath, " Please try to fix  manually and try again.")
 
     return {
       codes: [],
@@ -1111,8 +1105,8 @@ async function readQRCode(imagePath) {
 
   try {
     image = await Jimp.read(imagePath)
-  } catch (e) {
-    console.error("Can't read image ", imagePath, " wrong file format of permissions")
+  } catch (e) { // eslint-disable-line no-unused-vars
+    logToUserConsole("error", "Can't read image ", imagePath, " wrong file format of permissions")
 
     return ""
   }
@@ -1132,7 +1126,7 @@ async function readQRCode(imagePath) {
   })
 
   if (!result.length) {
-    console.error("Image ", imagePath, "has no QR code")
+    logToUserConsole("error", "Image ", imagePath, "has no QR code")
 
     return ""
   }
@@ -1156,7 +1150,7 @@ async function writeJSONVersion(newCodes) {
   const result = []
 
   for (const [
-    secret,
+    _,
     codes,
   ] of grouped) {
     if (codes.length === 1) {
@@ -1166,9 +1160,9 @@ async function writeJSONVersion(newCodes) {
 
     const unique = []
 
-    for (const c of codes) {
-      if (!unique.find(u => u.name === c.name && u.issuer === c.issuer)) {
-        unique.push(c)
+    for (const code of codes) {
+      if (!unique.find(u => u.name === code.name && u.issuer === code.issuer)) { // eslint-disable-line id-length
+        unique.push(code)
       }
     }
 
@@ -1179,7 +1173,7 @@ async function writeJSONVersion(newCodes) {
 
     const ans = await question(
       "Duplicate found:\n" +
-      unique.map((c, i) => `${i + 1}) ${c.issuer} - ${c.name}`).join("\n") +
+      unique.map((code, i) => `${i + 1}) ${code.issuer} - ${code.name}`).join("\n") +
       `\nWhich one do you want to keep? [1-${unique.length}]\n`,
       unique.map((_, i) => String(i + 1)),
     )
@@ -1199,7 +1193,8 @@ async function writeJSONVersion(newCodes) {
     return result
   }
   catch (error) {
-    console.error(
+    logToUserConsole(
+      "error",
       "Error writing",
       filePath,
       " cache file! Something went wrong,  please report this!",
@@ -1231,12 +1226,12 @@ async function getCodesFromImages() {
   const dir =  QR_CODES_DIR_PATH
 
   if (!fs.existsSync(dir)) {
-    console.log("Folder does not exist:", dir, "trying to repair it....")
+    logToUserConsole("warn", "Folder does not exist:", dir, "trying to repair it....")
 
     try {
       fs.mkdirSync(dir)
 
-      console.log("Folder qrcodes is created! Place MFA screenshots there, or re-run script with --import")
+      logToUserConsole("info", "Folder qrcodes is created! Place MFA screenshots there, or re-run script with --import")
 
       // If there is no folder we can know for sure there is no images eater!
       return {
@@ -1244,8 +1239,8 @@ async function getCodesFromImages() {
         status: false,
         error: "no-folder",
       }
-    } catch (e) {
-      console.log("Error creating folder:", dir, " Please try crating it manually!", e)
+    } catch (e) { // eslint-disable-line no-unused-vars
+      logToUserConsole("error", "Error creating folder:", dir, " Please try crating it manually!")
 
       // App wont work without qrcodes folder
       process.exit(1)
@@ -1256,8 +1251,8 @@ async function getCodesFromImages() {
 
   try {
     imageFiles = fs.readdirSync(dir)
-  } catch (e) {
-    console.log("Error listing Images in folder", dir, ", please check permissions")
+  } catch (e) { // eslint-disable-line no-unused-vars
+    logToUserConsole("error", "Error listing Images in folder", dir, ", please check permissions")
 
     // App wont work if folder is unreadable
     process.exit(1)
@@ -1268,7 +1263,7 @@ async function getCodesFromImages() {
   imageFiles = imageFiles.filter((imageFile) => !imageFile.endsWith(".gitignore"))
 
   if (!imageFiles.length) {
-    console.error("No images found, please add screenshots of qr codes in qrcodes folder, or re-run script with --import flag")
+    logToUserConsole("error", "No images found, please add screenshots of qr codes in qrcodes folder, or re-run script with --import flag")
 
     return {
       codes: [],
@@ -1288,7 +1283,7 @@ async function getCodesFromImages() {
   }
 
   if (codes.length === 0) {
-    console.error("No qr codes found in any image!")
+    logToUserConsole("error", "No qr codes found in any image!")
 
     return {
       codes: [],
@@ -1303,18 +1298,13 @@ async function getCodesFromImages() {
     try {
       const parsed = await parseCode(code)
       parsedCodes.push(parsed)
-    } catch (e) {
-      console.log(e)
-      console.error(
-        "Error parsing ",
-        code,
-        ". This code will be Skipped! Please delete wrong qr code",
-      )
+    } catch (e) { // eslint-disable-line no-unused-vars
+      logToUserConsole("error", "Error parsing ", code, ". This code will be Skipped! Please delete wrong qr code")
     }
   }
 
   if (!parsedCodes.length) {
-    console.error("All qr codes were invalid!")
+    logToUserConsole("error", "All qr codes were invalid!")
 
     return {
       codes: [],
@@ -1335,14 +1325,14 @@ async function getCodesFromImages() {
 async function handleDelete(mfaName) {
 
   if(!mfaName){
-    console.log("Please enter name of MFA you want to delete. To see available codes run script with --all flag")
+    logToUserConsole("warn", "Please enter name of MFA you want to delete. To see available codes run script with --all flag")
     process.exit(1)
   }
 
   const codes = await getCodesFromJsonFile(true)
 
   if(codes.codes.length === 0){
-    console.log("You do not have any MFA imported, so there is nothing to delete eater!")
+    logToUserConsole("info", "You do not have any MFA imported, so there is nothing to delete eater!")
     process.exit(1)
   }
 
@@ -1353,7 +1343,7 @@ async function handleDelete(mfaName) {
   const found = search(codes.codes, mfaName, false)
 
   if(found.length === 0){
-    console.log("Mfa is not found, so it's not deleted. Run script with --all to see all MFAs you saved")
+    logToUserConsole("info", "Mfa is not found, so it's not deleted. Run script with --all to see all MFAs you saved")
     process.exit(0)
   }
 
@@ -1369,13 +1359,13 @@ async function handleDelete(mfaName) {
       "y",
       "yes",
     ].includes(ans.toLowerCase())){
-      newCodes = newCodes.filter(newCode => newCode.secret !== found[0].secret  )
+      newCodes = newCodes.filter(newCode => newCode.secret !== found[0].secret)
     }
 
   }
 
   else if(found.length > 1){
-    console.log("Multiple MFAs found for deletion:")
+    logToUserConsole("warn", "Multiple MFAs found for deletion:")
 
     logMfaCode(null, found, false, true)
 
@@ -1398,7 +1388,7 @@ Please select one of options bellow (Insert number and press enter):
     }
 
     else if(answer === "2"){
-      console.log("Skipping deletion, bye")
+      logToUserConsole("info", "Skipping deletion, bye")
       process.exit(0)
     }
 
@@ -1422,19 +1412,19 @@ Please select one of options bellow (Insert number and press enter):
     }
 
     else {
-      console.error("Unknown error!")
+      logToUserConsole("error", "Unknown error!")
       process.exit(1)
     }
   }
 
   else {
-    console.error("Unknown error!")
+    logToUserConsole("error", "Unknown error!")
     process.exit(1)
   }
 
   await writeJSONVersion(newCodes)
 
-  console.log("Deleted!")
+  logToUserConsole("info", "Deleted!")
 }
 
 function search(codes, mfaName, onlyFirstResult = true){
@@ -1452,7 +1442,7 @@ function search(codes, mfaName, onlyFirstResult = true){
     return searchedCode
   }
 
-  return codes.filter( code => {
+  return codes.filter(code => {
     return code.name.toLowerCase().includes(mfaName.toLowerCase()) ||
       code?.issuer?.toLowerCase()?.includes(mfaName.toLowerCase())
 
@@ -1464,21 +1454,21 @@ function search(codes, mfaName, onlyFirstResult = true){
 async function handleRename(mfaName) {
 
   if(!mfaName){
-    console.log("Please enter name of MFA you want to Rename. To see available codes run script with --all flag")
+    logToUserConsole("warn", "Please enter name of MFA you want to Rename. To see available codes run script with --all flag")
     process.exit(1)
   }
 
   const codes = await getCodesFromJsonFile(true)
 
   if(codes.codes.length === 0){
-    console.log("You do not have any MFA imported, so there is nothing to rename eater!")
+    logToUserConsole("info", "You do not have any MFA imported, so there is nothing to rename eater!")
     process.exit(1)
   }
 
   const found = search(codes.codes, mfaName, false)
 
   if(found.length === 0){
-    console.log("Mfa is not found, nothing to rename. Run script with --all to see all MFAs you saved")
+    logToUserConsole("warn", "Mfa is not found, nothing to rename. Run script with --all to see all MFAs you saved")
     process.exit(0)
   }
 
@@ -1493,7 +1483,7 @@ async function handleRename(mfaName) {
     }
 
     else if(found.length > 1){
-      console.log("Multiple mfa codes are matching the search name:")
+      logToUserConsole("info", "Multiple mfa codes are matching the search name:")
 
       logMfaCode(null, found, false, true, true)
       const ans = await question("please select number which one you want to rename (Enter number): ", found.map((_, index) => String(index + 1)))
@@ -1502,7 +1492,7 @@ async function handleRename(mfaName) {
 
     }
 
-    console.log("Renaming:")
+    logToUserConsole("Renaming:")
 
     logMfaCode(null, [
       renamingCode,
@@ -1580,13 +1570,13 @@ What you want to change? ${renamingCode?.issuer} - ${renamingCode?.name}? Select
     }
 
     else if(ans === "4"){
-      console.log("Aborted")
+      logToUserConsole("info", "Aborted")
       process.exit(0)
     }
 
     await writeJSONVersion(newCodes)
 
-    console.log("Renamed!")
+    logToUserConsole("info", "Renamed!")
     process.exit(0)
   }
 
@@ -1609,14 +1599,14 @@ async function logMfaCode(mfaName, codes,  copy = false, all = false, logNumbers
     })
 
     if (result.length) {
-      result.sort( (a, b) => {
+      result.sort((a, b) => {
         return a.name.localeCompare(b.name)
       })
 
       printTable(result, logNumbers)
 
     } else {
-      console.log("Nothing to show")
+      logToUserConsole("normal", "Nothing to show")
     }
   }
 
@@ -1627,11 +1617,10 @@ async function logMfaCode(mfaName, codes,  copy = false, all = false, logNumbers
   }
   else {
 
-
     const searchedCode = search(codes, mfaName, !multiple)
 
     if (!searchedCode) {
-      console.warn("Mfa code not found, try running script again with '--all' flag or '--help' for help")
+      logToUserConsole("warn", "Mfa code not found, try running script again with '--all' flag or '--help' for help")
       process.exit(0)
     }
 
@@ -1662,6 +1651,6 @@ async function logMfaCode(mfaName, codes,  copy = false, all = false, logNumbers
 
     }
 
-    console.log(token)
+    logToUserConsole("success", token)
   }
 }
