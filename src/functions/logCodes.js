@@ -10,9 +10,9 @@ import readline from "node:readline"
 import { dirname, join, resolve } from "path"
 import { fileURLToPath } from "url"
 import clipboard from "clipboardy"
-import isWayland from "is-wayland"
 import { spawn, execSync } from "node:child_process"
 import qrcode from "qrcode-terminal"
+import process from "node:process"
 
 const __filename = fileURLToPath(import.meta.url)
 let __dirname = dirname(__filename)
@@ -34,6 +34,23 @@ function parseObject(object) {
     period: 30,
     secret: object.secret,
   }
+}
+
+
+function isWayland() {
+  if (process.platform !== "linux") {
+    return false
+  }
+
+  if (process.env.WAYLAND_DISPLAY) {
+    return true
+  }
+
+  if (process.env.XDG_SESSION_TYPE === "wayland") {
+    return true
+  }
+
+  return false
 }
 
 function printTable(rows, logNumbers) {
@@ -1119,8 +1136,6 @@ async function readQRCode(imagePath) {
 
     return ""
   }
-
-  console.log(result)
 
   return result[0].text
 
