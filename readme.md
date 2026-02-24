@@ -116,14 +116,14 @@ Options:
       Supports: otpauth:// URL, Google migration URL or Manual secret entry
 
   --restore
-      If you made some mistake and lost, you can restore old version.
+      If you made some mistake and lost your data, you can restore old version.
       By default full history is saved to prevent data loss.
 
    --qrcodes-path
       Use different qrcodes location.
       Strongly recommended to use this alongside --mfa-path to prevent data loss.
 
-   ----mfa-path
+   --mfa-path
       Use different mfa directory location.
       Strongly recommended to use this alongside --qrcodes-path to prevent data loss.
 

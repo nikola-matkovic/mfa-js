@@ -464,14 +464,14 @@ Options:
       Supports: otpauth:// URL, Google migration URL or Manual secret entry
 
   ${GREEN}--restore${RESET}
-      If you made some mistake and lost, you can restore old version.
+      If you made some mistake and lost your data, you can restore old version.
       By default full history is saved to prevent data loss.
 
   ${GREEN} --qrcodes-path ${RESET}
       Use different qrcodes location.
       Strongly recommended to use this alongside --mfa-path to prevent data loss.
 
-  ${GREEN} ----mfa-path ${RESET}
+  ${GREEN} --mfa-path ${RESET}
       Use different mfa directory location.
       Strongly recommended to use this alongside --qrcodes-path to prevent data loss.
 
