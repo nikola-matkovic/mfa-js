@@ -191,31 +191,70 @@ async function handleExport() {
     process.exit(1)
   }
 
-  logToUserConsole("info", "Tip: If you just want to move existing codes to another device for using with this script just copy mfa folder to another device and all you codes will be there.")
-
-  logMfaCode(null, codes.codes, false, true, true)
-
-  const answer = await question("Please enter which codes you want to export (single number or numbers separated by comma \",\", or type \"all\" to export all \n")
+  const answer = await question(`
+Please enter which codes you want to export: \n
+1) Export ALL codes
+2) Export just some codes
+3) Export all except some \n
+`, [
+    "1",
+    "2",
+    "3",
+  ])
 
   let toExportArray = []
 
-  if(answer === "all") {
+  if(answer === "1") {
     toExportArray = [
       ...codes.codes,
     ]
   }
-  else {
-    const indexes = answer.split(",")
+
+  else if(answer === "2") {
+    logMfaCode(null, codes.codes, false, true, true)
+
+    const ans = await question("Please enter number before codes you want to export, comma separated, example \"1, 5, 6, 21\":")
+
+
+    const indexes = ans.split(",")
 
     indexes.forEach(index => {
 
       const numeric = Number(index)
 
-
       if(Number.isInteger(numeric) && numeric <= codes.codes.length && numeric > 0) {
         toExportArray.push(codes.codes[numeric - 1])
       }
     })
+
+  }
+
+  else if(answer === "3") {
+
+    toExportArray = [
+      ...codes.codes,
+    ]
+
+    logMfaCode(null, codes.codes, false, true, true)
+
+    const ans = await question("Please enter number before codes you DO NOT WANT to export, comma separated, example \"1, 5, 6, 21\":")
+
+    const indexes = ans.split(",")
+
+    const toRemove = new Set()
+
+    indexes.forEach(index => {
+      const numeric = Number(index.trim())
+
+      if (Number.isInteger(numeric) && numeric <= codes.codes.length && numeric > 0) {
+        toRemove.add(numeric - 1)
+      }
+      else {
+        logToUserConsole("warn", index, "Will be skipped, incorrect selection")
+      }
+    })
+
+    toExportArray = toExportArray.filter((_, i) => !toRemove.has(i))
 
   }
 
@@ -297,8 +336,8 @@ Do you want to copy JSON to clipboard (more secure)?
     }
 
     else if(method === "2") {
-      logToUserConsole("normal", `${mfa?.issuer ? mfa.issuer + " - " : ""}${mfa.name} (In case of manual import - secret is ${mfa.secret}) `)
-      logToUserConsole("normal", url + "\n")
+      logToUserConsole("normal", `${mfa?.issuer ? mfa.issuer + " - " : ""}${mfa.name} (In case of manual import - secret is ${GREEN} ${mfa.secret}${RESET})`)
+      logToUserConsole("success", url + "\n")
     }
   })
 
