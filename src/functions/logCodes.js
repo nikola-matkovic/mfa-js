@@ -661,58 +661,68 @@ async function handleRestore() {
     }
   })
 
-  printTable(rows, true)
+  const askForVersion = async () => {
+    printTable(rows, true)
 
-  const ans = await question("Select which version yo want to restore. Enter number bellow \n", files.map((_, index) => String(index + 1)))
+    const ans = await question("Select which version yo want to restore. Enter number bellow \n", files.map((_, index) => String(index + 1)))
 
-  // After this we can be sure there is at least one json file
-  const filePath = join(dir, files[ans - 1])
-  let codes
-
-  try {
-    codes = fs.readFileSync(filePath, "utf8")
-  }
-  catch(error) {
-    logToUserConsole("error", "Error reading file", filePath, " please check permissions", error)
-    process.exit(1)
-  }
-
-  try {
-    codes = JSON.parse(codes)
-  } catch (e) { // eslint-disable-line
-    logToUserConsole("error", "Can't parse json in ", filePath, " Please try to fix  manually and try again.")
-    process.exit(1)
-  }
-
-  logToUserConsole("normal", "here is the preview of version you are restoring to:")
-  logMfaCode(null, codes, false, true, false, false)
-
-  const ans2 = await question("Continue? [Y/Yes, N/No]", [
-    "Y",
-    "Yes",
-    "N",
-    "No",
-  ])
-
-  if([
-    "y",
-    "yes",
-  ].includes(ans2.toLowerCase())) {
-    const newFileName = new Date().toISOString().replaceAll(":", "-") + ".json"
+    // After this we can be sure there is at least one json file
+    const filePath = join(dir, files[ans - 1])
+    let codes
 
     try {
-      fs.copyFileSync(filePath, join(MFA_DIR_PATH, newFileName))
-      logToUserConsole("info", "Restore completed!")
+      codes = fs.readFileSync(filePath, "utf8")
     }
-    catch(e){ //eslint-disable-line
-      logToUserConsole("error", "Restore failed! You can restore manually by coping ", filePath, "to", join(MFA_DIR_PATH, newFileName))
+    catch(error) {
+      logToUserConsole("error", "Error reading file", filePath, " please check permissions", error)
+      process.exit(1)
+    }
+
+    try {
+      codes = JSON.parse(codes)
+    }
+    catch (e) { // eslint-disable-line
+      logToUserConsole("error", "Can't parse json in ", filePath, " Please try to fix  manually and try again.")
+      process.exit(1)
+    }
+
+    logToUserConsole("normal", "here is the preview of version you are restoring to:")
+    logMfaCode(null, codes, false, true, false, false)
+
+    const ans2 = await question(`
+Continue?
+1) Yes
+2) No
+3) Change version / try again
+`, [
+      "1",
+      "2",
+      "3",
+    ])
+
+
+    if(ans2 === "1") {
+      const newFileName = new Date().toISOString().replaceAll(":", "-") + ".json"
+
+      try {
+        fs.copyFileSync(filePath, join(MFA_DIR_PATH, newFileName))
+        logToUserConsole("info", "Restore completed!")
+      }
+      catch(e){ //eslint-disable-line
+        logToUserConsole("error", "Restore failed! You can restore manually by coping ", filePath, "to", join(MFA_DIR_PATH, newFileName))
+      }
+    }
+    else if(ans2 === "3") {
+      askForVersion()
+    }
+
+    else{
+      logToUserConsole("normal", "Bye")
+      process.exit(0)
     }
   }
 
-  else {
-    logToUserConsole("normal", "Bye")
-    process.exit(0)
-  }
+  askForVersion()
 
 }
 
