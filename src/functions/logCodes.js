@@ -1717,6 +1717,6 @@ async function logMfaCode(mfaName, codes,  copy = false, all = false, logNumbers
 
     }
 
-    logToUserConsole("success", token)
+    logToUserConsole("normal", token) //! Do not use colors / custom log here! Error when running from other scripts!
   }
 }
