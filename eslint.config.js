@@ -83,7 +83,10 @@ export default defineConfig(
         "warn",
         { "minItems": 1 },
       ],
-
+      "brace-style": [
+        "error",
+        "stroustrup",
+      ],
       "object-curly-newline": [
         "warn",
         {
