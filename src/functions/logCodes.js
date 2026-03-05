@@ -204,6 +204,10 @@ Please enter which codes you want to export: \n
 
   let toExportArray = []
 
+  codes.codes.sort((a, b) => {
+    return a.name.localeCompare(b.name)
+  })
+
   if(answer === "1") {
     toExportArray = [
       ...codes.codes,
