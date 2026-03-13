@@ -617,7 +617,7 @@ async function handleQrCodeRead(overwrite) {
   const codes = await getCodesFromImages()
 
   if(codes.codes.length === 0) {
-    logToUserConsole("warn", "No MFA found. PLease import some.")
+    logToUserConsole("warn", "No MFA found. Please import some.")
     process.exit(1)
   }
   else {
@@ -781,7 +781,7 @@ async function handleDefaultJsonRead(name, copy = false, all = false, doNotTryQr
   const codes = await getCodesFromJsonFile(doNotTryQrs)
 
   if(codes.codes.length === 0) {
-    logToUserConsole("warn", "No MFA found. PLease import some.")
+    logToUserConsole("warn", "No MFA found. Please import some.")
   }
   else {
     await logMfaCode(name, codes.codes, copy, all, false, multiple)
