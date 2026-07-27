@@ -155,7 +155,7 @@ function toOtpAuthUrl(mfa) {
   const label = encodeURIComponent(`${mfa.issuer}:${mfa.name}`)
   const issuer = encodeURIComponent(mfa.issuer)
 
-  return `otpauth://${mfa.type}/${label}?secret=${mfa.secret}&issuer=${issuer}&algorithm=${mfa.algorithm}&digits=${mfa.digits}&period=30`
+  return `otpauth://${mfa.type || "totp"}/${label}?secret=${mfa.secret}&issuer=${issuer}&algorithm=${mfa.algorithm || "SHA1"}&digits=${mfa.digits || 6}&period=30`
 }
 
 
@@ -187,7 +187,7 @@ async function handleExport() {
   const codes = await getCodesFromJsonFile(true)
 
   if(codes.codes.length === 0) {
-    logToUserConsole("warn", "You do not have any MFA imported, so there is nothing to export eater!")
+    logToUserConsole("warn", "You do not have any MFA imported, so there is nothing to export either!")
     process.exit(1)
   }
 
@@ -224,7 +224,7 @@ Please enter which codes you want to export: \n
 
     indexes.forEach(index => {
 
-      const numeric = Number(index)
+      const numeric = Number(index.trim())
 
       if(Number.isInteger(numeric) && numeric <= codes.codes.length && numeric > 0) {
         toExportArray.push(codes.codes[numeric - 1])
@@ -279,10 +279,10 @@ Which method you prefer for exporting? (Enter one of numbers bellow)
 
 
   if(method  === "1") {
-    logToUserConsole("info", "Bellow are qr codes for export.")
+    logToUserConsole("info", "Below are qr codes for export.")
   }
   else if(method === "2") {
-    logToUserConsole("info", "Bellow are  otpauth:// urls. \n")
+    logToUserConsole("info", "Below are otpauth:// urls. \n")
   }
 
   else if(method === "3") {
@@ -371,10 +371,11 @@ Tip: You can also always add screenshots of your qrcodes in \"qrcodes\" folder (
 
     const parsed = await parseCode(url)
     const current = await getCodesFromJsonFile(true)
+    const parsedArray = Array.isArray(parsed) ? parsed.flat() : [parsed]
 
     final = [
       ...current.codes,
-      parsed,
+      ...parsedArray,
     ]
 
   }
@@ -431,7 +432,7 @@ You can either paste json directly or copy it to clipboard and we will try to re
         }
       }
       else {
-        clipboardEntry = clipboard.writeSync()
+      clipboardEntry = clipboard.readSync()
       }
 
 
@@ -617,7 +618,7 @@ async function handleQrCodeRead(overwrite) {
   const codes = await getCodesFromImages()
 
   if(codes.codes.length === 0) {
-    logToUserConsole("warn", "No MFA found. PLease import some.")
+    logToUserConsole("warn", "No MFA found. Please import some.")
     process.exit(1)
   }
   else {
@@ -635,6 +636,7 @@ async function handleRestore() {
 
   if (!fs.existsSync(dir)) {
     logToUserConsole("warn", "Folder does not exist:", dir)
+    process.exit(1)
   }
 
   let files = []
@@ -668,7 +670,7 @@ async function handleRestore() {
   const askForVersion = async () => {
     printTable(rows, true)
 
-    const ans = await question("Select which version yo want to restore. Enter number bellow \n", files.map((_, index) => String(index + 1)))
+    const ans = await question("Select which version you want to restore. Enter number below \n", files.map((_, index) => String(index + 1)))
 
     // After this we can be sure there is at least one json file
     const filePath = join(dir, files[ans - 1])
@@ -717,7 +719,7 @@ Continue?
       }
     }
     else if(ans2 === "3") {
-      askForVersion()
+      await askForVersion()
     }
 
     else{
@@ -726,7 +728,7 @@ Continue?
     }
   }
 
-  askForVersion()
+  await askForVersion()
 
 }
 
@@ -781,7 +783,7 @@ async function handleDefaultJsonRead(name, copy = false, all = false, doNotTryQr
   const codes = await getCodesFromJsonFile(doNotTryQrs)
 
   if(codes.codes.length === 0) {
-    logToUserConsole("warn", "No MFA found. PLease import some.")
+    logToUserConsole("warn", "No MFA found. Please import some.")
   }
   else {
     await logMfaCode(name, codes.codes, copy, all, false, multiple)
@@ -1038,7 +1040,7 @@ Do you want to keep it?
 
           }
 
-          writeJSONVersion(finalArray)
+          await writeJSONVersion(finalArray)
 
         }
         catch(error) {
@@ -1085,12 +1087,12 @@ async function getCodesFromJsonFile(skipQrBackup) {
 
       // Skip reading old JSON version and just create new one
       codesResponse = await getCodesFromImages()
-      createNewJsonVersion(codesResponse.codes, true)
+      await createNewJsonVersion(codesResponse.codes, true)
 
       return codesResponse
 
     } catch (e) { // eslint-disable-line
-      logToUserConsole("error", "Error creating folder:", dir, " Please try crating it manually!")
+      logToUserConsole("error", "Error creating folder:", dir, " Please try creating it manually!")
       process.exit(1)
     }
   }
@@ -1140,7 +1142,13 @@ async function getCodesFromJsonFile(skipQrBackup) {
     codes = fs.readFileSync(filePath, "utf8")
   }
   catch(e) { // eslint-disable-line no-unused-vars
-    logToUserConsole("error", "Error reading file", filePath, "e", " please check permissions")
+    logToUserConsole("error", "Error reading file", filePath, " please check permissions")
+
+    return {
+      codes: [],
+      error: "read-error",
+      status: false,
+    }
   }
 
   try {
@@ -1305,7 +1313,7 @@ async function getCodesFromImages() {
       }
     }
     catch (e) { // eslint-disable-line no-unused-vars
-      logToUserConsole("error", "Error creating folder:", dir, " Please try crating it manually!")
+      logToUserConsole("error", "Error creating folder:", dir, " Please try creating it manually!")
 
       // App wont work without qrcodes folder
       process.exit(1)
@@ -1401,7 +1409,7 @@ async function handleDelete(mfaName) {
   const codes = await getCodesFromJsonFile(true)
 
   if(codes.codes.length === 0) {
-    logToUserConsole("info", "You do not have any MFA imported, so there is nothing to delete eater!")
+    logToUserConsole("info", "You do not have any MFA imported, so there is nothing to delete either!")
     process.exit(1)
   }
 
@@ -1440,7 +1448,7 @@ async function handleDelete(mfaName) {
 
     const answer = await question(
       `
-Please select one of options bellow (Insert number and press enter):
+Please select one of options below (Insert number and press enter):
 1) Delete all found MFA codes
 2) Skip all (Do nothing)
 3) Ask me for each
@@ -1504,8 +1512,8 @@ function search(codes, mfaName, onlyFirstResult = true) {
       code.name.toLowerCase().includes(mfaName.toLowerCase()))
 
     if(!searchedCode) {
-      searchedCode = codes?.find((code) =>
-        code?.issuer.toLowerCase().includes(mfaName.toLowerCase()))
+    searchedCode = codes?.find((code) =>
+      code?.issuer?.toLowerCase().includes(mfaName.toLowerCase()))
     }
 
     return searchedCode
@@ -1530,7 +1538,7 @@ async function handleRename(mfaName) {
   const codes = await getCodesFromJsonFile(true)
 
   if(codes.codes.length === 0) {
-    logToUserConsole("info", "You do not have any MFA imported, so there is nothing to rename eater!")
+    logToUserConsole("info", "You do not have any MFA imported, so there is nothing to rename either!")
     process.exit(1)
   }
 
@@ -1561,7 +1569,7 @@ async function handleRename(mfaName) {
 
     }
 
-    logToUserConsole("Renaming:")
+    logToUserConsole("info", "Renaming:")
 
     logMfaCode(null, [
       renamingCode,
@@ -1689,7 +1697,7 @@ async function logMfaCode(mfaName, codes,  copy = false, all = false, logNumbers
 
     const searchedCode = search(codes, mfaName, !multiple)
 
-    if (!searchedCode) {
+    if (!searchedCode || (Array.isArray(searchedCode) && searchedCode.length === 0)) {
       logToUserConsole("warn", "Mfa code not found, try running script again with '--all' flag or '--help' for help")
       process.exit(0)
     }
